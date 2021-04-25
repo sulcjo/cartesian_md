@@ -1,5 +1,14 @@
 # pickleprot_alpha
 
+Python library for sorting, organizing and visualizing MD-related datasets of proteins. Also provides external calls for DSSP and pymol.
+GROMACS .xvg files
+g_mmpbsa/gmx_MMPBSA/ AMBER mmpbsa.py files
+g_wham umbrella sampling files
+GRINN files
+.pdb files
+
+
+
 # Extra arguments in quick_load
 Added an option to provide extra arguments into wildcard parsing. Extra arguments are prefaced with ^  and separated by , (commas).
 For example, {2,3 in an extra argument would mean "use the first generator
