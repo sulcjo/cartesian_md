@@ -77,13 +77,20 @@ class proteinModel:
 
 
                         replaced = replace_wildcard(replaced, replacement_generator, extra_arguments)
+                        if extra_arguments:
+                            extra_arguments.pop(0)
+                            print(extra_arguments)
+
                 # If it's just one list/tuple of numbers/strings for example (2,6,8)
                 else:
                     replaced = replace_wildcard([wildcarded_string], replacement_generators, extra_arguments)
+                    if extra_arguments:
+                        extra_arguments.pop(0)
+                        print(extra_arguments)
+
 
                 replaced_all.append(replaced)
-                if extra_arguments:
-                    extra_arguments.pop(0)
+
                 #replaced_all = flatten(replaced_all)
 
             return(replaced_all)
@@ -120,6 +127,9 @@ class proteinModel:
 
         models = []
 
+
+        print(paths[3])
+        exit()
         # Generate every model according to handles/names
         for i, name in enumerate(names):
 

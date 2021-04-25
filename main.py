@@ -6,7 +6,7 @@ WT_models = proteinModel.quick_load(
      '/home/sulcjo/Desktop/myomedin/mmpbsa/4G6F/WT/***/xmgrace/***' : ( (2,6,8), ('rmsd_backbone-vs-start.xvg', 'rmsf_all_atom.xvg', 'gyrate.xvg', 'minimal-periodic-distance.xvg'), ('rmsd', 'rmsf', 'rg', 'mpd') ),
      '/home/sulcjo/Desktop/myomedin/mmpbsa_gmxmmpbsa/WT/***/results/FINAL_RESULTS_MMPBSA.dat' : ( (2,6,8), ('gmxmmpbsa') ),
      '/home/sulcjo/Desktop/myomedin/sirah_umbrella/sirah_umbrella_wt/***/wham_results/***' : ( (2,6,8), ('profile_errors.xvg', 'histo.xvg', 'contacts_pulling.xvg'), ('umbrella_profile', 'umbrella_histogram', 'contacts')),
-     '/home/sulcjo/Desktop/myomedin/sirah_umbrella/sirah_umbrella_wt/***/model_***.pdb{2': ( (2,6,8), ('sequence') )
+     '/home/sulcjo/Desktop/myomedin/sirah_umbrella/sirah_umbrella_wt/***/model_***/***/***/***.pdb{2,3': ( (2,6,8), ('a','b'), ('sequence') )
     }, handles = {'4G6F-MyoWT mod. ***' : ((2,6,8)) }
 )
 
