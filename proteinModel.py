@@ -35,8 +35,25 @@ class proteinModel:
             replaced_all = []
             for key in dictionary.keys():
 
+
+
                 # Get values from dictionary
                 wildcarded_string = key  # Original string to be replaced
+
+                # Check for extra selection algebra {xxx}
+                # For example, path/***/***{2} : generator1
+                # This tells the parser that generator1 is used to replace 2 wildcards with same values
+                if '{' in key:
+                    extra_arguments = key.split('{')[1]
+                    extra_arguments = [int(i) for i in extra_arguments.split(",")]
+
+
+                    wildcarded_string = key.split('{')[0]
+                else:
+                    extra_arguments = None
+
+
+
                 # If handles, no dataset argument is passed in the last place in dict value
                 if handle_parsing:
                     replacement_generators = [replacement for replacement in dictionary[
@@ -47,7 +64,7 @@ class proteinModel:
                     replacement_identifiers = dictionary[key][-1]  # This identifies what replacements are supposed to mean (i.e. dataset type)
 
                 # Check if number of wildcard matches the number of replacement generators
-                if wildcarded_string.count('***') != len(replacement_generators) and not handle_parsing:
+                if wildcarded_string.count('***') != len(replacement_generators) and not handle_parsing and not extra_arguments:
                     exit('NUMBER OF WILDCARDS DOES NOT MATCH THE NUMBER OF VALUES')
 
                 # Now replace wildcards one by one
@@ -57,25 +74,31 @@ class proteinModel:
                     for iteration, replacement_generator in enumerate(replacement_generators):
                         if iteration == 0:
                             replaced = [wildcarded_string]
-                        replaced = replace_wildcard(replaced, replacement_generator)
+
+
+                        replaced = replace_wildcard(replaced, replacement_generator, extra_arguments)
                 # If it's just one list/tuple of numbers/strings for example (2,6,8)
                 else:
-                    replaced = replace_wildcard([wildcarded_string], replacement_generators)
+                    replaced = replace_wildcard([wildcarded_string], replacement_generators, extra_arguments)
 
                 replaced_all.append(replaced)
+                if extra_arguments:
+                    extra_arguments.pop(0)
                 #replaced_all = flatten(replaced_all)
 
             return(replaced_all)
 
-        def replace_wildcard(string_holder, replacement_generator):
+        def replace_wildcard(string_holder, replacement_generator, occurences):
             replacement_holder = []
+            if occurences == None:
+                occurences = [1]
 
             for string in string_holder:
                 if is_iterable(replacement_generator):
-                    replacements = [string.replace('***', str(single_replacement), 1) for single_replacement in
+                    replacements = [string.replace('***', str(single_replacement), occurences[0]) for single_replacement in
                                     replacement_generator]
                 else:
-                    replacements = [string.replace('***', str(replacement_generator), 1)]
+                    replacements = [string.replace('***', str(replacement_generator), occurences[0])]
                 replacement_holder.append(replacements)
 
                 # Check if list is nested, if so, flatten it
@@ -93,8 +116,6 @@ class proteinModel:
         names = flatten(parse_wildcards(handles, handle_parsing=True))
         paths = parse_wildcards(arguments)
         dataset_names = [arguments[key][-1] for key in arguments]
-
-
 
 
         models = []
@@ -181,7 +202,8 @@ class proteinModel:
             'gmxmmpbsa'             : self.__get_gmxmmpbsa_dataset,
             'umbrella_histogram'    : self.__get_umbrella_histogram,
             'umbrella_profile'      : self.__get_umbrella_profile,
-            'contacts'              : self.__get_simple_dataset
+            'contacts'              : self.__get_simple_dataset,
+            'sequence'              : self.__get_sequence_pdb,
 
 
         }
@@ -271,7 +293,8 @@ class proteinModel:
         self.datasets[f'{dataset_name}_pb'] = {'binding': pb_total, 'bindinge': pb_total_std}
         self.datasets[f'{dataset_name}_gb'] = {'binding': gb_total, 'bindinge': gb_total_std}
 
-    def get_sequence_pdb(self, path):
+    def __get_sequence_pdb(self, path, dataset_name):
+
         def three_to_one(sequence):
             assignment_dict = {'CYS': 'C', 'ASP': 'D', 'SER': 'S', 'GLN': 'Q', 'LYS': 'K',
                                'ILE': 'I', 'PRO': 'P', 'THR': 'T', 'PHE': 'F', 'ASN': 'N',
@@ -284,6 +307,8 @@ class proteinModel:
             return(modified_sequence)
 
         with open(path) as pdb_file:
+
+
             residues = []
             pdb_lines = pdb_file.readlines()
             remember_last_resindex = 0
