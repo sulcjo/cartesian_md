@@ -2,6 +2,13 @@ import matplotlib.pyplot as plt
 import numpy as np
 import scipy.optimize
 import math
+import matplotlib.pyplot as plt
+import pandas as pd
+import seaborn as sns
+import numpy as np
+import operator
+from matplotlib import gridspec
+
 
 class Comparator:
 
@@ -233,6 +240,35 @@ class Comparator:
                     axs[0].legend(fontsize=self.setFontSizeMedium)
             except:
                 print(f'ERROR PLOTTING UMBRELLA SAMPLING PLOTS FOR {self.proteinModels[index].annotation}')
+
+    def plot_IEM(self, modelIndexes = None, dataset = 'total_IEM'):
+
+        def get_best_pairs(dataframe, pairs=20):
+            statistics_dataframe = dataframe.describe().T
+            best = statistics_dataframe.nsmallest(n=pairs, columns='mean')
+            best = best.drop_duplicates()
+
+            return(best)
+
+        if not modelIndexes:
+            modelIndexes = self.__get_model_indexes()
+
+
+
+        for index in modelIndexes:
+            # Build datasets
+
+            dataframe = self.proteinModels[index].datasets[dataset]
+            best_pairs = get_best_pairs(dataframe)
+
+            # Save calculated best pairs to proteinModel
+            self.proteinModels[index].comparator_datasets[f'Cbest_pairs_{dataset}'] = best_pairs
+
+
+
+
+
+
 
     def show(self):
         plt.show()
