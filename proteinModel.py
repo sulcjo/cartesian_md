@@ -268,7 +268,7 @@ class proteinModel:
 
 
 
-
+    # This function calls the get_dataset anyway
     def get_GRINN_datasets(self, path, dataset_names = []):
         # Add slash if not provided at the end
         if path[-1] != '/':

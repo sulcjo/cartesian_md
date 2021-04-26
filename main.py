@@ -14,7 +14,7 @@ WT_models = proteinModel.quick_load(
 # '/path/***/***/***/***{2,2': ( (2,6,8), (1,2,3), ('dataset name') )
 
 WT_models[1].split = [(0,239),(240,350)]
-
+#WT_models[1].DSSP_assign()
 WT_models[1].get_GRINN_datasets('/home/sulcjo/Desktop/myomedin/grinn_linux_v110_hf1/WT_10E8_model_6/')
 
 #print(WT_models[1].pdb_file)
@@ -34,9 +34,11 @@ WT_compare.setFigSize = (20, 15)
 #WT_compare.plot_simple_dataset('rmsf')
 #WT_compare.plot_mmpbsa('gmxmmpbsa_pb', title='PB')
 #WT_compare.plot_mmpbsa('gmxmmpbsa_gb', title='GB')
-WT_compare.plot_umbrella(fit=True, stderror=True, check_sampling=True)
-WT_compare.plot_simple_dataset('contacts')
-#WT_compare.plot_IEM(modelIndexes=[1])
+#WT_compare.plot_umbrella(fit=True, stderror=True, check_sampling=True)
+#WT_compare.plot_simple_dataset('contacts')
+mark_resis=[pos+(240-14)-1 for pos in (34,35,36,37,63,64,65,89,90,91,92,93)]
+#WT_compare.plot_IEM(modelIndexes=[1], dataset='vdw_IEM', mark_resis=mark_resis)
+WT_compare.plot_IEM(modelIndexes=[1], dataset='total_IEM', mark_resis=mark_resis)
 WT_compare.show()
 
 

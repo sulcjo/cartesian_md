@@ -15,6 +15,7 @@ class Comparator:
     # Comparator takes proteinModel instances as an argument
     # It has access to all the datasets present in the models
     def __init__(self, proteinModels = None):
+        plt.rcParams.update({'font.sans-serif': 'Verdana'})
         self.proteinModels = proteinModels
         self.number_models = len(self.proteinModels)
         self.setMaxColumns = 5
@@ -23,7 +24,8 @@ class Comparator:
         self.setLineColor = 'blue'
         self.setFigSize = (20, 15)
         self.setFontSizeMedium = 16
-        print(f'LOADED MODELS {[model.annotation for model in proteinModels]}')
+        self.setFontSizeSmall = 14
+        print(f'COMPARATOR LOADED MODELS {[model.annotation for model in proteinModels]}')
         plt.rc('xtick', labelsize=self.setFontSizeMedium)
         plt.rc('ytick', labelsize=self.setFontSizeMedium)
 
@@ -47,8 +49,9 @@ class Comparator:
         # Prepare matplotlib objects
         fig, axs = plt.subplots(nrows=nrows, ncols=ncols, figsize=self.setFigSize)
         plt.suptitle(subtitle, size=self.setFontSizeLarge)
-        plt.subplots_adjust(wspace=0.140, hspace=0.450, top=0.950, right=0.920, bottom=0.050, left=0.050)
-
+        fig.tight_layout()
+        #plt.subplots_adjust(wspace=0.140, hspace=0.450, top=0.940, right=0.920, bottom=0.050, left=0.050)
+        plt.subplots_adjust(top=0.940)
         # Fill rows and columns of subplots
         for i, model in enumerate(modelIndexes):
             if i == 0:
@@ -278,7 +281,8 @@ class Comparator:
             except:
                 print(f'ERROR PLOTTING UMBRELLA SAMPLING PLOTS FOR {self.proteinModels[index].annotation}')
 
-    def plot_IEM(self, modelIndexes = None, dataset = 'total_IEM'):
+    def plot_IEM(self, modelIndexes = None, dataset = 'total_IEM',
+                 vh_lines = True, sec_str=True, mark_resis=None):
 
         def get_best_pairs(dataframe, pairs=20):
             statistics_dataframe = dataframe.describe().T
@@ -290,16 +294,175 @@ class Comparator:
         if not modelIndexes:
             modelIndexes = self.__get_model_indexes()
 
+        def obtain_sum_interactions(dataframe):
+            sum_interactions = []
+            for row_name, row in dataframe.items():
+                sum_interactions.append(sum(row))
 
+            return (sum_interactions)
+
+        def get_sec_str_colors(ss):
+            colors = []
+            color_assignments = {'-': 'grey', 'E': 'blue', 'T': 'purple', 'S': 'purple', 'H': 'orange'}
+            for struc in ss:
+                try:
+                    colors.append(color_assignments[struc])
+                except:
+                    colors.append('white')
+            return (colors)
 
         for index in modelIndexes:
             # Build datasets
-
+            type = dataset.split('_')[0]
             dataframe = self.proteinModels[index].datasets[dataset]
             best_pairs = get_best_pairs(dataframe)
+            sum_interactions = obtain_sum_interactions(dataframe)
+            sequence = self.proteinModels[index].seq_3_chains
+            pairs_df = self.proteinModels[index].datasets[f'{type}_pairwise_IEM']
+            title = f'{self.proteinModels[index].annotation} {dataset}'
 
-            # Save calculated best pairs to proteinModel
+
+            # Handle matrix splitting, if proteinModel doesnt have a split attribute, it will plot the complete (diagonally symmetrical matrix)
+            if self.proteinModels[index].split:
+                protein_range = self.proteinModels[index].split[0]
+                ligand_range = self.proteinModels[index].split[1]
+            else:
+                protein_range = (0, len(sequence))
+                ligand_range = protein_range
+
+
+            # Save calculated values to proteinModel
             self.proteinModels[index].Cdatasets[f'Cbest_pairs_{dataset}'] = best_pairs
+            self.proteinModels[index].Cdatasets[f'Csum_interactions_{dataset}'] = sum_interactions
+
+            # Change step of ticks in heatmap
+            ticks_step = 5
+
+
+            dataframe.replace(0, np.nan, inplace=True)
+
+            # Prepare figure as a grid of 4 subplots
+            fig = plt.figure(figsize=(15, 15))
+            # plt.tight_layout()
+            spec = gridspec.GridSpec(ncols=3, nrows=2, width_ratios=(4, 40, 1), height_ratios=(20, 3))
+            ax_cbar = fig.add_subplot(spec[2])
+            colors = ['red' if x < 0 else 'grey' if x == 0 else 'blue' for x in sum_interactions]
+            # Plot heatmap using Seaborn
+            ax3 = fig.add_subplot(spec[1])
+            ax3 = sns.heatmap(dataframe, cmap='RdBu', center=0, robust=True,
+                              cbar_kws={'label': 'kcal/mol'}, cbar=True, cbar_ax=ax_cbar, linewidths=0.25)
+            # ax3 = plt.imshow(df, cmap='RdBu')
+
+            # Plot ax1, upper-right plot showing ligand residues energies
+            ax1 = fig.add_subplot(spec[4], sharex=ax3)
+
+            ax1.scatter(sequence, sum_interactions, color=colors, marker='x')
+
+            # Because heatmap is an image, it doesn't fill the whole subplot frame, therefore ax1 wouldn't correspond to heatmap axis
+            # Add a little bit to the xlim (beyond 110 residues of MYO) so it compacts the frame
+            # Hide x-axis ticks (resis)
+            plt.setp(ax1.get_xticklabels(), visible=False)
+            # Hide right, top and bottom parts of the frame
+            ax1.spines['right'].set_visible(False)
+            ax1.spines['top'].set_visible(False)
+            ax1.spines['bottom'].set_visible(False)
+            ax1.set_ylabel('kcal/mol')
+            # Similar process for the ax2, showing Ab residues left of the heatmap
+            ax2 = fig.add_subplot(spec[0], sharey=ax3)
+            ax2.scatter(sum_interactions, sequence, color=colors, marker='x')
+            ax2.spines['right'].set_visible(False)
+            ax2.spines['top'].set_visible(False)
+            ax2.spines['left'].set_visible(False)
+            ax2.set_xlabel('kcal/mol')
+            plt.setp(ax2.get_yticklabels(), visible=False)
+
+            ax2.tick_params(axis='both', which='both', length=0)
+            ax1.tick_params(axis='both', which='both', length=0)
+
+            ax3.set_xticks(ticks=[i for i in range(0, len(sequence), ticks_step)])
+            ax3.set_yticks(ticks=[i for i in range(0, len(sequence), ticks_step)])
+            ax3.set(xlim=ligand_range, ylim=protein_range)
+
+            # Additional stuff
+            if vh_lines:
+                ax1.vlines(sequence, ymin=[0 for i in sequence], ymax=sum_interactions, color=colors)
+                ax2.hlines(sequence, xmin=[0 for i in sequence], xmax=sum_interactions, color=colors)
+
+            if mark_resis:
+                for mark_resi in mark_resis:
+                    if int(mark_resi) < ligand_range[0]:
+                        ax3.scatter(ligand_range[0] + 2, mark_resi, color='red', marker='s', s=150, linewidths=0.25,
+                                    edgecolors='black')
+
+                    elif int(mark_resi) >= ligand_range[0]:
+                        ax3.scatter(mark_resi, protein_range[0] + 2, color='red', marker='s', s=150, linewidths=0.25,
+                                    edgecolors='black')
+                    else:
+                        print('Mark residue values out of range')
+
+            if sec_str:
+                if 'dssp' not in self.proteinModels[index].datasets:
+                    self.proteinModels[index].DSSP_assign()
+                secondary_structure = self.proteinModels[index].datasets['dssp']
+
+                # Plot ligand SS (x-axis)
+                ax3.scatter(dataframe.index.values[ligand_range[0]:ligand_range[1]],
+                            [-2 for i in dataframe.index.values[ligand_range[0]:ligand_range[1]]],
+                            color=get_sec_str_colors(secondary_structure[ligand_range[0]:ligand_range[1]]), s=150,
+                            marker='s', linewidths=0.25, edgecolors='black')
+
+                # Plot protein  SS (y-axis)
+                ax3.scatter([(ligand_range[0] - 0.5) for i in dataframe.index.values], dataframe.index.values,
+                            color=get_sec_str_colors(secondary_structure), s=150, marker='s', linewidths=0.25,
+                            edgecolors='black')
+                ax3.set(ylim=(protein_range[0] - 2.5, protein_range[1]))
+                ax3.set(xlim=(ligand_range[0] - 1, ligand_range[1]))
+
+            if mark_resis or sec_str:
+                ax_ss_leg = fig.add_subplot(spec[3])
+            else:
+                ax_ss_leg = None
+
+            if sec_str:
+                # Construct a legend - make a non-visible scatter plot to obtain labels, put it into lower left subplot and hide everything plot-related, then create a legend
+                for ss_color, ss_type in zip(['grey', 'blue', 'purple', 'orange'],
+                                             ['Coil', r'$\beta$-sheet', 'Turn/Bend', r'$\alpha$-Helix']):
+                    ax_ss_leg.scatter(-1000, -1000, color=ss_color, marker='s', label=ss_type, s=150)
+
+            if mark_resis:
+                ax_ss_leg.scatter(-1000, 1000, color='red', marker='s', label='Marked residues', s=150)
+
+            if ax_ss_leg:
+                ax_ss_leg.legend(ncol=1, loc='upper center', fontsize=20, frameon=False)
+                ax_ss_leg.set(xlim=(0, 1), ylim=(0.1))
+                ax_ss_leg.set_xticks([])
+                ax_ss_leg.set_yticks([])
+                for spine_pos in ax_ss_leg.spines:
+                    ax_ss_leg.spines[spine_pos].set_visible(False)
+
+            # Bottom frame line
+            ax3.axhline(y=protein_range[0], color='k', linewidth=2)
+
+            # Top frame line
+            ax3.axhline(y=protein_range[1], color='k', linewidth=2)
+
+            # Left frame line
+            ax3.axvline(x=ligand_range[0], color='k', linewidth=2)
+
+            # Right frame line
+            ax3.axvline(x=ligand_range[1], color='k', linewidth=2)
+
+            best_pairs = get_best_pairs(pairs_df, pairs=7).T
+            best_pairs_text = ''
+            for row in best_pairs:
+                best_pairs_text += f'{row} {best_pairs[row]["mean"].round(decimals=1)} kcal/mol \n'
+
+            ax3.scatter(x=-100, y=-100, label=best_pairs_text, marker='x', s=0)
+            ax3.legend(loc='upper right', fontsize=self.setFontSizeSmall, frameon=False)
+
+
+            plt.suptitle(title, size=self.setFontSizeLarge)
+
 
 
 
