@@ -9,8 +9,29 @@ from matplotlib import gridspec
 from Bio.PDB import PDBParser
 from Bio.PDB.DSSP import DSSP
 import os
+from functools import wraps
 
 
+def describeLoad(loadFunction):
+    """
+    Wrapper function that describes the loading process. All the loading methods of proteinModels take two arguments:
+    path and dataset_name.
+
+    Specific load function is selected by proteinModel.get_dataset using a dictionary of key:function pairs.
+    proteinModel.get_dataset is wrapped by this function
+    :param loadFunction: A specific function used to load a dataset, provided by proteinModel class
+    :return: itself
+    """
+
+    @wraps(loadFunction)
+    def function_wrapper(self, path, dataset_name):
+        try:
+            loadFunction(self, path, dataset_name)
+            print(f' -----> LOADING {path} WITH {dataset_name}')
+        except:
+            print(f' XXXXXX UNSUCCESSFUL LOAD {path} OF {dataset_name}')
+
+    return (function_wrapper)
 
 class proteinModel:
 
@@ -26,7 +47,7 @@ class proteinModel:
             self.annotation = annotation
             self.datasets = {}
             self.split = split
-            self.comparator_datasets = {}
+            self.Cdatasets = {}
 
 
     @staticmethod
@@ -157,10 +178,11 @@ class proteinModel:
                         try:
 
                             new_model.get_dataset(path[0], sub_name)
-                            print(f' -----> LOADED {sub_name} FROM {path[0]}')
+                            #print(f' -----> LOADED {sub_name} FROM {path[0]}')
 
                         except:
-                            print(f' xxxxxx FILE {sub_name} PATH {path[0]} NOT FOUND')
+                            #print(f' xxxxxx FILE {sub_name} PATH {path[0]} NOT FOUND')
+                            pass
                         path.pop(0)
 
 
@@ -169,9 +191,10 @@ class proteinModel:
 
                     try:
                         new_model.get_dataset(path[0], dataset_name)
-                        print(f' -----> LOADED {dataset_name} FROM {path[0]}')
+                        #print(f' -----> LOADED {dataset_name} FROM {path[0]}')
                     except:
-                        print(f' XXXXXX FILE {dataset_name} PATH {path[0]} NOT FOUND')
+                        pass
+                        #print(f' XXXXXX FILE {dataset_name} PATH {path[0]} NOT FOUND')
                     path.pop(0)
 
             models.append(new_model)
@@ -191,22 +214,6 @@ class proteinModel:
             data_pickle = fileObject.read()
             self.__dict__ = pickle.loads(data_pickle)
             print(f'LOADING INSTANCE NAME {self.annotation} FROM {path}')
-
-    def read_multiple(self, dict, types):
-        # This should read multiple files in the folder and assign them to the datasets
-        counter = 0
-        for key in dict.keys():
-            for value in dict[key]:
-                if key[-1] != '/':
-                    key += '/'
-
-                try:
-                    self.__get_simple_dataset(path=key+value, dataset_name=types[counter])
-
-                except:
-                    print(f'Cannot read {key+value}. File does not exist or it is not compatible with the "simple" dataset standard, such as those find in GROMACS geometry analysis files')
-
-                counter += 1
 
     def DSSP_assign(self):
 
@@ -230,7 +237,9 @@ class proteinModel:
 
         self.datasets['dssp'] = ss
 
+    @describeLoad
     def get_dataset(self, path, dataset_name):
+
         # This finds out which dataset loading function to use according to data type
         dataset_sorting_dict = {
             'rmsd'                  : self.__get_simple_dataset,
@@ -252,11 +261,15 @@ class proteinModel:
             'total_energies_list'   : self.__get_energy_per_residue_dataset
         }
 
+
         dataset_sorting_dict[dataset_name](path, dataset_name)
 
         #return(dataset_sorting_dict[dataset_name])
 
-    def get_GRINN_datasets(self, path):
+
+
+
+    def get_GRINN_datasets(self, path, dataset_names = []):
         # Add slash if not provided at the end
         if path[-1] != '/':
             path += '/'

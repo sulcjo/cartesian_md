@@ -29,11 +29,26 @@ WT_compare.setLineColor = 'blue'
 WT_compare.setFontSizeLarge = 22
 WT_compare.setFontSizeMedium = 18
 WT_compare.setFigSize = (20, 15)
-WT_compare.plot_simple_dataset('rmsd')
-WT_compare.plot_simple_dataset('rg')
-WT_compare.plot_simple_dataset('rmsf')
-WT_compare.plot_mmpbsa('gmxmmpbsa_pb', title='PB')
-WT_compare.plot_mmpbsa('gmxmmpbsa_gb', title='GB')
-WT_compare.plot_umbrella(fit=True, stderror=True)
+#WT_compare.plot_simple_dataset('rmsd')
+#WT_compare.plot_simple_dataset('rg')
+#WT_compare.plot_simple_dataset('rmsf')
+#WT_compare.plot_mmpbsa('gmxmmpbsa_pb', title='PB')
+#WT_compare.plot_mmpbsa('gmxmmpbsa_gb', title='GB')
+WT_compare.plot_umbrella(fit=True, stderror=True, check_sampling=True)
 WT_compare.plot_simple_dataset('contacts')
-#WT_compare.show()
+#WT_compare.plot_IEM(modelIndexes=[1])
+WT_compare.show()
+
+
+
+"""
+mper_models = proteinModel.quick_load(
+    {f'{base_path}/sirah_umbrella/sirah_umbrella_mper/***/wham_results/***' : ((2,6),('profile_errors.xvg','histo.xvg'),('umbrella_profile','umbrella_histogram'))
+    }, handles = {'4G6F-MPER mod.***' : (2,6)}
+)
+
+mper_comparator = Comparator(proteinModels=mper_models)
+mper_comparator.plot_umbrella(fit=True,stderror=True,check_sampling=True, check_sampling_limit=100)
+mper_comparator.show()
+
+"""

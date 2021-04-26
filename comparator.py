@@ -188,7 +188,16 @@ class Comparator:
         handles = [plt.Rectangle((0, 0), 1, 1, color=legend_entries[label]) for label in labels]
         plt.legend(handles, labels, fontsize=self.setFontSizeMedium, loc='upper right')
 
-    def plot_umbrella(self, modelIndexes = None, fit = False, stderror = False):
+    def plot_umbrella(self, modelIndexes = None, fit = False, stderror = False, check_sampling = False, check_sampling_limit = 100):
+        """
+        :param modelIndexes: Which models (zero indexing) to plot from the models included in this Comparator class (modelIndexes)
+        :param fit: Do an exponential fit of the curve and calculate max. PMF
+        :param stderror: Add error-bars, requires a file containing errors calculated by GMX WHAM
+        :param check_sampling: Calculates total sampling for all x-values and plots them as a curve. Warns if any X-value has < check_sampling_limit counts.
+        :param check_sampling_limit: Warning limit of counts for sampling, 100 by default.
+        :return: Doesn't return anything. Creates an ax instance of matplotlib.
+        """
+
         if not modelIndexes:
             modelIndexes = self.__get_model_indexes()
 
@@ -201,12 +210,40 @@ class Comparator:
 
 
 
+
+
+
+
+
+
                 fig, axs = plt.subplots(nrows=2, ncols=1, figsize=self.setFigSize, sharex=True)
                 for run in histo_y:
                     axs[1].plot(histo_x, run, color=self.setLineColor)
                     axs[1].set_title('Histograms', fontsize=self.setFontSizeLarge)
                     axs[1].set_xlabel('COM-COM distance', fontsize=self.setFontSizeMedium)
                     axs[1].set_ylabel('Counts', fontsize=self.setFontSizeMedium)
+
+                if check_sampling:
+                    if 'Cumbrella_histogram_total_sampling' in self.proteinModels[index].Cdatasets:
+                        sampling = self.proteinModels[index].Cdatasets['Cumbrella_histogram_total_sampling']
+                    else:
+                        sampling = []
+                        for i, x in enumerate(histo_x):
+                            y_values_for_x = [value[i] for value in histo_y]
+                            y_values_for_x = filter(None, y_values_for_x)
+                            sampling.append(sum(y_values_for_x))
+                        self.proteinModels[index].Cdatasets['Cumbrella_histogram_total_sampling'] = sampling
+
+                        # y = filter(None, y)
+                    axs[1].plot(histo_x, sampling,color='red')
+                    inadequate = []
+                    for x, sample in zip(histo_x, sampling):
+                        if sample < 10:
+                            inadequate.append(x)
+                    print(f'{self.proteinModels[index].annotation} WARNING INADEQUATE SAMPLING IN {inadequate}')
+
+
+
 
                 if stderror:
                     profile_stderror = self.proteinModels[index].datasets['umbrella_profile'][2]
@@ -262,7 +299,9 @@ class Comparator:
             best_pairs = get_best_pairs(dataframe)
 
             # Save calculated best pairs to proteinModel
-            self.proteinModels[index].comparator_datasets[f'Cbest_pairs_{dataset}'] = best_pairs
+            self.proteinModels[index].Cdatasets[f'Cbest_pairs_{dataset}'] = best_pairs
+
+
 
 
 
