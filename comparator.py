@@ -8,6 +8,8 @@ import seaborn as sns
 import numpy as np
 import operator
 from matplotlib import gridspec
+from numpy.linalg import eig
+from sklearn.preprocessing import MinMaxScaler, StandardScaler
 
 
 class Comparator:
@@ -280,6 +282,126 @@ class Comparator:
                     axs[0].legend(fontsize=self.setFontSizeMedium)
             except:
                 print(f'ERROR PLOTTING UMBRELLA SAMPLING PLOTS FOR {self.proteinModels[index].annotation}')
+    def compare_IEM(self, modelIndexes, dataset = 'total_IEM'):
+        """
+        Both matrices are normalized first, this is done by obtaining a matrix mean, subtracting it from all the values
+        and the dividing all values by the maximum value. This creates a normalized matrix, with values ranging from -1 to 1.
+        These matrices are plotted alongside the delta matrix.
+
+        IEM matrices from GRINN have a baseline for some reason. This baseline is obtained from each matrix so:
+        1) Calculate mode of matrix values by column (returns a list of values)
+        2) Calculate mean of this list (should return a list of means of modes) - this is mostly for making Pandas work properly
+        3) Calculate mean of this list, returns a scalar
+        4) Do this for both matrices, obtain two means of modes. Subtract this from each considered value
+        5) Add 0.01 to baselines (empirical)
+
+        Baselines are problematic, because no value is really zero, but a small number. This means that when comparing pairs
+        present in matrix 1 with residues not present in matrix 2, some number between 0-1 (energy from matrix 1) would get divided by a small baseline.
+        This would give a nonsensical result and effectively "imprints" matrix 1 into the difference matrix (where there's any value in matrix 1,
+        it will be in matrix 2 as well). Even when subtracting the baseline, the problem remains, so a value of 0.01 was chosen to add to the
+        baselines, so these new added baselines are used to subtract from all compared values. This may result in missing some insignificant differences however.
+
+        Calculate abs(value1/value2) differences, there's several possible cases:
+        A) Value1 > Value2: append 1/delta (so you get similarity between 0.00 and 1.00)
+        B) Value1 < Value2: append delta
+        c) Value2 == 0 (division by zero): append 0 (zero similarity)
+
+        Then only plot these similarity values larger than 0.01 (1 %) to further crush the baseline and improve clarity and
+        informational value
+
+        :param modelIndexes: proteinModel instances with initialized IEM datasets to compare
+        :param dataset: type of dataset (from proteinModel instances), default='total_IEM'
+        :return: a difference dataset and a plt object
+        """
+
+        dataframe1 = self.proteinModels[modelIndexes[0]].datasets[dataset]
+        #.replace(0, np.nan, inplace=True)
+        dataframe2 = self.proteinModels[modelIndexes[1]].datasets[dataset]
+        #dataframe1 = pd.DataFrame(MinMaxScaler().fit_transform(dataframe1))
+        #dataframe2 = pd.DataFrame(MinMaxScaler().fit_transform(dataframe2))
+
+        # Dataset normalization by all values, not rows or columns
+        dataframe1 = dataframe1 - dataframe1.mean().mean()
+        dataframe1 = dataframe1 / dataframe1.max().max()
+        dataframe2 = dataframe2 - dataframe2.mean().mean()
+        dataframe2 = dataframe2 / dataframe2.max().max()
+        sequence = self.proteinModels[modelIndexes[0]].seq_1
+
+        delta_dataframe = []
+        y = 0
+        baseline1 = dataframe1.mode().mean().mean() + 0.01
+        baseline2 = dataframe2.mode().mean().mean() + 0.01
+
+        similarity_non_zero = []
+        while y < len(dataframe1):
+            delta_dataframe.append([])
+            for x in range(len(dataframe1)):
+                value1 = float(dataframe1.iloc[x,y])
+                value2 = float(dataframe2.iloc[x,y])
+                if value2 <= baseline2 or value1 <= baseline1:
+                    delta_value = 0
+                elif value1 > value2:
+                    delta_value = 1/(abs(value1/value2))
+                elif value1 < value2:
+                    delta_value = abs(value1 / value2)
+                else:
+                    delta_value = 1
+                if delta_value > 0.01:
+                    delta_dataframe[y].append(delta_value)
+                else:
+                    delta_dataframe[y].append(0)
+
+            y += 1
+
+        delta_dataframe = pd.DataFrame(delta_dataframe)
+        delta_dataframe.replace(0, np.nan)
+        fig1, ax1 = plt.subplots(figsize=self.setFigSize)
+        ax1 = sns.heatmap(dataframe1, cmap='RdBu', center=0, vmin=-1, vmax=1, cbar=True, cbar_kws={'label' : 'Lower = more stabilizing'})
+        fig1.suptitle(f'Normalized IEM heatmap of {self.proteinModels[modelIndexes[0]].annotation}', size=self.setFontSizeLarge)
+
+        fig2, ax2 = plt.subplots(figsize=self.setFigSize)
+        ax2 = sns.heatmap(dataframe2, cmap='RdBu', center=0, vmin=-1, vmax=1, cbar=True, cbar_kws={'label' : 'Lower = more stabilizing'},)
+        fig2.suptitle(f'Normalized IEM heatmap of {self.proteinModels[modelIndexes[1]].annotation}', size=self.setFontSizeLarge)
+
+        fig3, ax3 = plt.subplots(figsize=self.setFigSize)
+        #ax3.imshow(delta_dataframe)
+        ax3 = sns.heatmap(delta_dataframe, cmap='Greys', robust=True, vmin=0.01, vmax=1, cbar_kws={'label' : '|[x1,y1]/[x2,y2]|'}, cbar=True)
+        ax3.figure.axes[-1].yaxis.label.set_size(self.setFontSizeMedium)
+
+        fig3.suptitle(str(f"$\Delta$-matrix of standardized matrices \n {self.proteinModels[modelIndexes[0]].annotation} {self.proteinModels[modelIndexes[1]].annotation} \n 1.00 means absolute similarity"), size=self.setFontSizeLarge)
+        if self.proteinModels[modelIndexes[0]].split:
+            protein_range = self.proteinModels[modelIndexes[0]].split[0]
+            ligand_range = self.proteinModels[modelIndexes[0]].split[1]
+        else:
+            protein_range = (0, len(sequence))
+            ligand_range = protein_range
+
+
+        ticks_step = 10
+        for plot in [ax1,ax2,ax3]:
+            plot.set_xticks(ticks=[i for i in range(0, len(sequence), ticks_step)])
+            plot.set_yticks(ticks=[i for i in range(0, len(sequence), ticks_step)])
+            plot.set_xticklabels([i for i in sequence[::ticks_step]])
+            plot.set_yticklabels([i for i in sequence[::ticks_step]])
+            plot.set(xlim=(ligand_range[0], ligand_range[1]), ylim=(protein_range[0], protein_range[1]))
+            # Bottom frame line
+            plot.axhline(y=protein_range[0], color='k', linewidth=2)
+
+            # Top frame line
+            plot.axhline(y=protein_range[1], color='k', linewidth=2)
+
+            # Left frame line
+            plot.axvline(x=ligand_range[0], color='k', linewidth=2)
+
+            # Right frame line
+            plot.axvline(x=ligand_range[1], color='k', linewidth=2)
+
+
+        return(delta_dataframe)
+        #values, vectors = eig(dataframe)
+        #print(sum(values))
+        #print(sum(vectors))
+
 
     def plot_IEM(self, modelIndexes = None, dataset = 'total_IEM',
                  vh_lines = True, sec_str=True, mark_resis=None):
@@ -317,10 +439,11 @@ class Comparator:
             dataframe = self.proteinModels[index].datasets[dataset]
             best_pairs = get_best_pairs(dataframe)
             sum_interactions = obtain_sum_interactions(dataframe)
-            sequence = self.proteinModels[index].seq_3_chains
+            sequence = self.proteinModels[index].seq_1_chains
             pairs_df = self.proteinModels[index].datasets[f'{type}_pairwise_IEM']
             title = f'{self.proteinModels[index].annotation} {dataset}'
-
+            dataframe.replace(0, np.nan, inplace=True)
+            #dataframe = pd.DataFrame(StandardScaler().fit_transform(dataframe))
 
             # Handle matrix splitting, if proteinModel doesnt have a split attribute, it will plot the complete (diagonally symmetrical matrix)
             if self.proteinModels[index].split:
@@ -339,7 +462,7 @@ class Comparator:
             ticks_step = 5
 
 
-            dataframe.replace(0, np.nan, inplace=True)
+
 
             # Prepare figure as a grid of 4 subplots
             fig = plt.figure(figsize=(15, 15))
@@ -349,8 +472,9 @@ class Comparator:
             colors = ['red' if x < 0 else 'grey' if x == 0 else 'blue' for x in sum_interactions]
             # Plot heatmap using Seaborn
             ax3 = fig.add_subplot(spec[1])
-            ax3 = sns.heatmap(dataframe, cmap='RdBu', center=0, robust=True,
+            ax3 = sns.heatmap(dataframe, cmap='RdBu', robust=True, center=0,
                               cbar_kws={'label': 'kcal/mol'}, cbar=True, cbar_ax=ax_cbar, linewidths=0.25)
+            # center=0
             # ax3 = plt.imshow(df, cmap='RdBu')
 
             # Plot ax1, upper-right plot showing ligand residues energies
@@ -461,16 +585,20 @@ class Comparator:
             ax3.legend(loc='upper right', fontsize=self.setFontSizeSmall, frameon=False)
 
 
+
             plt.suptitle(title, size=self.setFontSizeLarge)
-
-
-
-
-
-
-
-
-
 
     def show(self):
         plt.show()
+
+
+
+"""
+TO DO:
+
+Plot saving, both in an image form and as an object so it can be loaded in the future (saved in the same way as proteinModels are going to be saved)
+
+Conversion of units into every method (kJ <-> kcal)
+
+
+"""

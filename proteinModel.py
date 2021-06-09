@@ -501,22 +501,15 @@ class proteinModel:
 To do:
 Manual for methods and classes so it can be used properly from terminal
 
-Add possibility to get energy matrices (vdw, elec, total), sequences,
-
 Maybe add a possibility of getting other stuff from gmx_MMPBSA files, not just the summary
-
-Comparator class that can visualize dataset of input models or a single model
-4) Grinn heatmap
 
 Convert kJ to kcal and v/v in plots
 
 Pass through of arguments from quick_loader to proteinModels (like splits etc.)
 
-Heatmapper class to visualize IEMs
-
-Better loading of GRINN files, just add the folder path and it will load everything
-
 Saving models to a database/file, then read from it later
 
 Ultimate goal: BASH or GUI access to saved models, quick visualization. Use BASH or GUI to load new datasets etc.
+
+Secondary structure and 3D Rama-plots from my MD course project to proteinModel and comparator
 """
