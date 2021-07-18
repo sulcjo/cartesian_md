@@ -193,7 +193,7 @@ class Comparator:
         handles = [plt.Rectangle((0, 0), 1, 1, color=legend_entries[label]) for label in labels]
         plt.legend(handles, labels, fontsize=self.setFontSizeMedium, loc='upper right')
 
-    def plot_umbrella(self, modelIndexes = None, fit = False, stderror = False, check_sampling = False, check_sampling_limit = 100):
+    def plot_umbrella(self, modelIndexes = None, fit = False, stderror = False, check_sampling = False, check_sampling_limit = 100, print_values = True):
         """
         :param modelIndexes: Which models (zero indexing) to plot from the models included in this Comparator class (modelIndexes)
         :param fit: Do an exponential fit of the curve and calculate max. PMF
@@ -217,16 +217,15 @@ class Comparator:
 
 
 
-
-
-
-
                 fig, axs = plt.subplots(nrows=2, ncols=1, figsize=self.setFigSize, sharex=True)
                 for run in histo_y:
                     axs[1].plot(histo_x, run, color=self.setLineColor)
                     axs[1].set_title('Histograms', fontsize=self.setFontSizeLarge)
                     axs[1].set_xlabel('COM-COM distance', fontsize=self.setFontSizeMedium)
                     axs[1].set_ylabel('Counts', fontsize=self.setFontSizeMedium)
+
+
+
 
                 if check_sampling:
                     if 'Cumbrella_histogram_total_sampling' in self.proteinModels[index].Cdatasets:
@@ -261,27 +260,81 @@ class Comparator:
                 plt.suptitle(self.proteinModels[index].annotation, fontsize=self.setFontSizeLarge)
 
 
+
+                """
+                Method for getting minimum of PMF curve (ignoring outliers caused by bad sampling) and maximum
+                (through exponential fitting to defeat oscillations and bad convergence) to calculated DeltaG
+                
+                """
+                def get_minimum(profile_y, histo_y, histo_x):
+                    sampling = []
+                    for i, x in enumerate(histo_x):
+                        y_values_for_x = [value[i] for value in histo_y]
+                        y_values_for_x = filter(None, y_values_for_x)
+                        sampling.append(sum(y_values_for_x))
+                    self.proteinModels[index].Cdatasets['Cumbrella_histogram_total_sampling'] = sampling
+
+                    new_sampling = []
+                    new_profile_y = []
+
+                    for i, value in enumerate(sampling):
+                        if value > 50:
+                            new_sampling.append(sampling[i])
+                            new_profile_y.append(profile_y[i])
+
+                    return (min(new_profile_y))
+
+                def monoExp(x, m, t, b):
+                    return m * np.exp(-t * x) + b
+
+                p0 = (0, 2, 4)
+                params, cv = scipy.optimize.curve_fit(monoExp, profile_x, profile_y, p0, maxfev=10000)
+                m, t, b = params
+
+                exp_y = []
+                for value in profile_x:
+                    exp_y.append(monoExp(value, m, t, b))
+
+                minimum = get_minimum(profile_y, histo_y, histo_x)
+                maximum = b
+                delta = round(maximum - minimum, 2)
+
+                print(f'{self.proteinModels[index].annotation} min {minimum} upper {maximum}, delta {delta}')
+                axs[0].plot(profile_x, [minimum for i in profile_x], color='red', label=f'{delta} kJ/mol')
+                axs[0].plot(profile_x, [maximum for i in profile_x], color='red')
+                axs[0].legend()
+
+
+
+                """
+                END OF METHOD
+                """
+
+
+
+
+
+
+
+
+
                 if fit:
-
-                    # Fitting exponential function to obtain deltaG
-                    def monoExp(x, m, t, b):
-                        return m * np.exp(-t * x) + b
-
-                    p0 = (0, 2, 60)
-                    params, cv = scipy.optimize.curve_fit(monoExp, profile_x, profile_y, p0)
-                    m, t, b = params
-
-                    exp_y = []
-                    for value in profile_x:
-                        exp_y.append(monoExp(value, m, t, b))
 
                     axs[0].plot(profile_x, exp_y, '--', label=fr"Monoexp. fit $\Delta$PMF = {round(b, 2)} kJ/mol",
                                 color='r')
+
+
+
+
+
                     # kd = calculateKd(round(b, 2), 300)
                     # axs[0].scatter(profile_x, exp_y, s=0, label=f'Kd = {format(kd,".1E")} M')
                     axs[0].legend(fontsize=self.setFontSizeMedium)
-            except:
+            except KeyError:
                 print(f'ERROR PLOTTING UMBRELLA SAMPLING PLOTS FOR {self.proteinModels[index].annotation}')
+
+
+
     def compare_IEM(self, modelIndexes, dataset = 'total_IEM'):
         """
         Both matrices are normalized first, this is done by obtaining a matrix mean, subtracting it from all the values
@@ -344,12 +397,16 @@ class Comparator:
                     delta_value = 1/(abs(value1/value2))
                 elif value1 < value2:
                     delta_value = abs(value1 / value2)
-                else:
+                elif value1 == value2:
                     delta_value = 1
+                else:
+                    delta_value = 0
+
                 if delta_value > 0.01:
                     delta_dataframe[y].append(delta_value)
                 else:
                     delta_dataframe[y].append(0)
+
 
             y += 1
 
@@ -383,7 +440,11 @@ class Comparator:
             plot.set_yticks(ticks=[i for i in range(0, len(sequence), ticks_step)])
             plot.set_xticklabels([i for i in sequence[::ticks_step]])
             plot.set_yticklabels([i for i in sequence[::ticks_step]])
-            plot.set(xlim=(ligand_range[0], ligand_range[1]), ylim=(protein_range[0], protein_range[1]))
+            #plot.set(xlim=(ligand_range[0]+30, ligand_range[1]-40), ylim=(protein_range[0]+80, protein_range[1]-40))
+            plot.set(xlim=(ligand_range[0], ligand_range[1]),
+                     ylim=(protein_range[0], protein_range[1]))
+
+
             # Bottom frame line
             plot.axhline(y=protein_range[0], color='k', linewidth=2)
 
@@ -404,7 +465,15 @@ class Comparator:
 
 
     def plot_IEM(self, modelIndexes = None, dataset = 'total_IEM',
-                 vh_lines = True, sec_str=True, mark_resis=None):
+                 vh_lines = True, sec_str=True, mark_resis=None, write_best_pairs=True):
+
+
+
+
+
+
+
+
 
         def get_best_pairs(dataframe, pairs=20):
             statistics_dataframe = dataframe.describe().T
@@ -437,13 +506,75 @@ class Comparator:
             # Build datasets
             type = dataset.split('_')[0]
             dataframe = self.proteinModels[index].datasets[dataset]
-            best_pairs = get_best_pairs(dataframe)
+
+
+
+
+            """
+            Temporary to show only some protein parts (only experimentally identified key interaction residues of the antibody
+            """
+            
+            antibody_key_residues = ['W33', 'R50', 'E53', 'Y99', 'F100A', 'G100D', 'P100F', 'P100G', 'E100I', 'E100J', ]
+            antibody_key_residues_indexes = []
+            for i, aminoacid in enumerate(self.proteinModels[index].seq_1):
+                if aminoacid in antibody_key_residues:
+                    antibody_key_residues_indexes.append(i)
+            #Non-key columns have to be removed 2x (once as rows in transposed, once as columns in normal - matrix is diagonally symetrical)
+            #dataframe = dataframe.T
+            for col in dataframe.columns:
+                if col not in antibody_key_residues_indexes and col < 240:
+                    dataframe[col].values[:] = 0
+            dataframe = dataframe.T
+            for col in dataframe.columns:
+                if col not in antibody_key_residues_indexes and col < 240:
+                    dataframe[col].values[:] = 0
+            dataframe = dataframe.T
+
+
+            excel_dataframe = pd.DataFrame(dataframe)
+            excel_dataframe.columns = self.proteinModels[index].seq_3_chains
+            excel_dataframe = excel_dataframe.loc[:, (excel_dataframe != 0).any(axis=0)]
+            excel_dataframe = excel_dataframe.T
+            excel_dataframe.columns = self.proteinModels[index].seq_3_chains
+            excel_dataframe = excel_dataframe.loc[:, (excel_dataframe != 0).any(axis=0)]
+            excel_dataframe = excel_dataframe.T
+
+
+            excel_dataframe.to_excel(f'/run/media/sulcjo/Data/in silico/transfer/OBRAZKY/{self.proteinModels[index].annotation}.xlsx')
+
+
+
+
+
+
+
+
+            if write_best_pairs:
+                best_pairs = get_best_pairs(dataframe)
+            else:
+                best_pairs = ''
+
             sum_interactions = obtain_sum_interactions(dataframe)
+            print(sum_interactions)
+
             sequence = self.proteinModels[index].seq_1_chains
             pairs_df = self.proteinModels[index].datasets[f'{type}_pairwise_IEM']
             title = f'{self.proteinModels[index].annotation} {dataset}'
             dataframe.replace(0, np.nan, inplace=True)
             #dataframe = pd.DataFrame(StandardScaler().fit_transform(dataframe))
+
+
+
+
+
+
+
+
+
+
+
+
+
 
             # Handle matrix splitting, if proteinModel doesnt have a split attribute, it will plot the complete (diagonally symmetrical matrix)
             if self.proteinModels[index].split:
@@ -452,6 +583,16 @@ class Comparator:
             else:
                 protein_range = (0, len(sequence))
                 ligand_range = protein_range
+
+
+
+
+
+
+
+
+
+
 
 
             # Save calculated values to proteinModel
@@ -472,6 +613,7 @@ class Comparator:
             colors = ['red' if x < 0 else 'grey' if x == 0 else 'blue' for x in sum_interactions]
             # Plot heatmap using Seaborn
             ax3 = fig.add_subplot(spec[1])
+
             ax3 = sns.heatmap(dataframe, cmap='RdBu', robust=True, center=0,
                               cbar_kws={'label': 'kcal/mol'}, cbar=True, cbar_ax=ax_cbar, linewidths=0.25)
             # center=0
@@ -539,7 +681,14 @@ class Comparator:
                 ax3.scatter([(ligand_range[0] - 0.5) for i in dataframe.index.values], dataframe.index.values,
                             color=get_sec_str_colors(secondary_structure), s=150, marker='s', linewidths=0.25,
                             edgecolors='black')
+
+                """ PLOTTING LIMITS """
+
+
                 ax3.set(ylim=(protein_range[0] - 2.5, protein_range[1]))
+
+
+
                 ax3.set(xlim=(ligand_range[0] - 1, ligand_range[1]))
 
             if mark_resis or sec_str:
@@ -576,19 +725,24 @@ class Comparator:
             # Right frame line
             ax3.axvline(x=ligand_range[1], color='k', linewidth=2)
 
-            best_pairs = get_best_pairs(pairs_df, pairs=7).T
-            best_pairs_text = ''
-            for row in best_pairs:
-                best_pairs_text += f'{row} {best_pairs[row]["mean"].round(decimals=1)} kcal/mol \n'
+            if write_best_pairs:
+                best_pairs = get_best_pairs(pairs_df, pairs=7).T
+                best_pairs_text = ''
+                for row in best_pairs:
+                    best_pairs_text += f'{row} {best_pairs[row]["mean"].round(decimals=1)} kcal/mol \n'
 
-            ax3.scatter(x=-100, y=-100, label=best_pairs_text, marker='x', s=0)
-            ax3.legend(loc='upper right', fontsize=self.setFontSizeSmall, frameon=False)
+                ax3.scatter(x=-100, y=-100, label=best_pairs_text, marker='x', s=0)
+                ax3.legend(loc='upper right', fontsize=self.setFontSizeSmall, frameon=False)
 
 
 
             plt.suptitle(title, size=self.setFontSizeLarge)
 
     def show(self):
+
+
+
+
         plt.show()
 
 
