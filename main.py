@@ -2,7 +2,27 @@ from proteinModel import proteinModel
 from comparator import Comparator
 
 base_path = '/home/sulcjo/Desktop/myomedin'
+"""
+all = proteinModel.quick_load(
+    {
+     f'{base_path}/mmpbsa/4G6F/***/***/xmgrace/***' : ( (24,25,92,158,'WT','MPER'),(range(0,11)), ('rmsd_backbone-vs-start.xvg', 'rmsf_all_atom.xvg', 'gyrate.xvg', 'minimal-periodic-distance.xvg'), ('rmsd', 'rmsf', 'rg', 'mpd') ),
+     f'{base_path}/mmpbsa_gmxmmpbsa/***/***/results/FINAL_RESULTS_MMPBSA.dat' : ( (24,25,92,158,'WT','MPER'),(range(0,11)), ('gmxmmpbsa') ),
+    }, handles = {'4G6F-Myo*** mod. ***' : ((24,25,92,158,'WT','MPER'),(range(0,11)))}
+)
+all_compare = Comparator(proteinModels=all)
+all_compare.setLineColor = 'blue'
+all_compare.setFontSizeLarge = 22
+all_compare.setFontSizeMedium = 18
+all_compare.setFigSize = (20, 15)
+#all_compare.plot_simple_dataset('rmsd')
+#all_compare.plot_simple_dataset('rg')
+all_compare.plot_mmpbsa('gmxmmpbsa_pb',title='PB')
+all_compare.show()
+#WT_compare.plot_simple_dataset('rg')
+#WT_compare.plot_simple_dataset('rmsf')
+#WT_compare.plot_mmpbsa('gmxmmpbsa_pb', title='PB')
 
+"""
 """
 myo24 = proteinModel.quick_load(
     {
@@ -56,10 +76,7 @@ myo24_compare.show()
 #mod24_2_comp.plot_umbrella(stderror=False, check_sampling=True, check_sampling_limit=0)
 #mod24_2_comp.show()
 
-"""
 
-
-"""
 sirah_umbrella = proteinModel.quick_load(
     {
         f'{base_path}/sirah_umbrella/sirah_umbrella_mper/***_unrestrained/wham_results/***' : ((2,6,'original'), ('profile_errors.xvg','histo.xvg','contacts_pulling.xvg'), ('umbrella_profile','umbrella_histogram','contacts')),
@@ -72,9 +89,7 @@ compare_sirah = Comparator(proteinModels=sirah_umbrella)
 compare_sirah.plot_umbrella(stderror=True,fit=True,check_sampling=False)
 compare_sirah.plot_simple_dataset(dataset='contacts')
 compare_sirah.show()
-"""
 
-"""
 atomistic_umbrella = proteinModel.quick_load(
     {
         f'{base_path}/umbrella_sampling/round_2_out/158_***/wham_results/***' : ((2,3,8), ('profile_errors.xvg','histo.xvg','contacts_pulling.xvg'), ('umbrella_profile','umbrella_histogram','contacts')),
@@ -84,12 +99,11 @@ atomistic_umbrella = proteinModel.quick_load(
 )
 
 compare_atomistic = Comparator(proteinModels=atomistic_umbrella)
-compare_atomistic.plot_umbrella(stderror=True,fit=True,check_sampling=False)
+compare_atomistic.plot_umbrella(stderror=True,fit=False,max_traj=5,check_sampling=False)
 compare_atomistic.plot_simple_dataset(dataset='contacts')
 compare_atomistic.show()
-"""
 
-"""
+
 sirah_umbrella = proteinModel.quick_load(
     {
         f'{base_path}/sirah_umbrella/sirah_umbrella_***/***_unrestrained/wham_results/***' : ((24,25,92,158,'wt','mper'),(0,1,2,3,4,5,6,7,8,9,'original'), ('profile_errors.xvg','histo.xvg','contacts_pulling.xvg'), ('umbrella_profile','umbrella_histogram','contacts')),
@@ -99,14 +113,10 @@ sirah_umbrella = proteinModel.quick_load(
 )
 
 compare_sirah = Comparator(proteinModels=sirah_umbrella)
-compare_sirah.plot_umbrella(stderror=True,fit=False,check_sampling=False)
+compare_sirah.plot_umbrella(stderror=True,fit=False,check_sampling=False, max_traj=5)
 compare_sirah.plot_simple_dataset(dataset='contacts')
 compare_sirah.show()
 
-"""
-
-
-"""
 MPERs = proteinModel.quick_load(
     {
     f'{base_path}/mmpbsa_gmxmmpbsa/MPER/***/grinn_output/system_dry.pdb' : ((2,6,'original'), ('sequence')),
@@ -124,7 +134,39 @@ compareMPERs = Comparator(proteinModels=MPERs)
 compareMPERs.plot_IEM(modelIndexes=[0,1,2])
 orig_6 = compareMPERs.compare_IEM(modelIndexes=[1,2])
 compareMPERs.show()
+
+MPER = proteinModel.quick_load(
+    {
+    f'{base_path}/mmpbsa_gmxmmpbsa/MPER/***/results/FINAL_RESULTS_MMPBSA.dat' : ((2,6,'original'), ('gmxmmpbsa')),
+    f'{base_path}/mmpbsa_gmxmmpbsa/MPER/***/grinn_output/system_dry.pdb' : ((2,6,'original'), ('sequence')),
+    }, handles={'10E8-MPER mod. ***' : (2,6,'original')}
+)
+
+#mark_resis=[pos+(240-14)-1 for pos in (34,35,36,37,63,64,65,89,90,91,92,93)]
+MPER[0].split = [(0,130),(239,267)]
+MPER[0].DSSP_assign()
+MPER[0].get_GRINN_datasets(f'{base_path}/mmpbsa_gmxmmpbsa/MPER/2/grinn_output')
+MPER[1].split = [(0,130),(239,267)]
+MPER[1].DSSP_assign()
+MPER[1].get_GRINN_datasets(f'{base_path}/mmpbsa_gmxmmpbsa/MPER/6/grinn_output')
+MPER[2].get_dataset('/home/sulcjo/Desktop/myomedin/docking/cluspro_in/4G6F_original_mper.pdb','sequence')
+MPER[2].split = [(0,130),(239,267)]
+MPER[2].DSSP_assign()
+MPER[2].get_GRINN_datasets(f'{base_path}/mmpbsa_gmxmmpbsa/MPER/original/grinn_output')
+
+
+
+compareMPER = Comparator(proteinModels=MPER)
+#model23_delta = compare158.compare_IEM(modelIndexes=[0,1])
+compareMPER.plot_IEM(modelIndexes=[0,1,2], write_best_pairs=False, dataset='elec_IEM')
+compareMPER.show()
+
+
 """
+
+
+
+
 
 MLA024 = proteinModel.quick_load(
     {
@@ -141,7 +183,7 @@ MLA024[0].get_GRINN_datasets(f'{base_path}/mmpbsa_gmxmmpbsa/24/2/grinn_output')
 
 compareMLA024 = Comparator(proteinModels=MLA024)
 #model23_delta = compare158.compare_IEM(modelIndexes=[0,1])
-compareMLA024.plot_IEM(modelIndexes=[0], write_best_pairs=False, mark_resis=mark_resis)
+compareMLA024.plot_IEM(modelIndexes=[0], write_best_pairs=False, mark_resis=mark_resis, dataset='total_IEM')
 compareMLA024.show()
 
 
@@ -161,7 +203,7 @@ MLA025[0].get_GRINN_datasets(f'{base_path}/mmpbsa_gmxmmpbsa/25/5/grinn_output')
 
 compareMLA025 = Comparator(proteinModels=MLA025)
 #model23_delta = compare158.compare_IEM(modelIndexes=[0,1])
-compareMLA025.plot_IEM(modelIndexes=[0], write_best_pairs=False, mark_resis=mark_resis)
+compareMLA025.plot_IEM(modelIndexes=[0], write_best_pairs=False, mark_resis=mark_resis, dataset='total_IEM')
 compareMLA025.show()
 
 
@@ -179,7 +221,7 @@ MLA092[0].get_GRINN_datasets(f'{base_path}/mmpbsa_gmxmmpbsa/92/0/grinn_output')
 
 compareMLA092 = Comparator(proteinModels=MLA092)
 #model23_delta = compare158.compare_IEM(modelIndexes=[0,1])
-compareMLA092.plot_IEM(modelIndexes=[0], write_best_pairs=False, mark_resis=mark_resis)
+compareMLA092.plot_IEM(modelIndexes=[0], write_best_pairs=False, mark_resis=mark_resis, dataset='total_IEM')
 compareMLA092.show()
 
 
@@ -205,7 +247,7 @@ MLA158[2].get_GRINN_datasets(f'{base_path}/mmpbsa_gmxmmpbsa/158/8/grinn_output')
 
 compareMLA158 = Comparator(proteinModels=MLA158)
 #model23_delta = compare158.compare_IEM(modelIndexes=[0,1])
-compareMLA158.plot_IEM(modelIndexes=[0,1,2], write_best_pairs=False, mark_resis=mark_resis)
+compareMLA158.plot_IEM(modelIndexes=[0,1,2], write_best_pairs=False, mark_resis=mark_resis, dataset='total_IEM')
 compareMLA158.show()
 
 
@@ -227,5 +269,6 @@ MLAWT[1].get_GRINN_datasets(f'{base_path}/mmpbsa_gmxmmpbsa/WT/8/grinn_output')
 
 compareMLAWT = Comparator(proteinModels=MLAWT)
 #model23_delta = compare158.compare_IEM(modelIndexes=[0,1])
-compareMLAWT.plot_IEM(modelIndexes=[0,1], write_best_pairs=False, mark_resis=mark_resis)
+compareMLAWT.plot_IEM(modelIndexes=[0,1], write_best_pairs=False, mark_resis=mark_resis, dataset='total_IEM')
 compareMLAWT.show()
+

@@ -52,8 +52,8 @@ class Comparator:
         fig, axs = plt.subplots(nrows=nrows, ncols=ncols, figsize=self.setFigSize)
         plt.suptitle(subtitle, size=self.setFontSizeLarge)
         fig.tight_layout()
-        #plt.subplots_adjust(wspace=0.140, hspace=0.450, top=0.940, right=0.920, bottom=0.050, left=0.050)
-        plt.subplots_adjust(top=0.940)
+        plt.subplots_adjust(wspace=0.53, hspace=0.357, top=0.940, right=0.920, bottom=0.050, left=0.050)
+        #plt.subplots_adjust(top=0.940)
         # Fill rows and columns of subplots
         for i, model in enumerate(modelIndexes):
             if i == 0:
@@ -70,6 +70,7 @@ class Comparator:
                 variant_dataset = self.proteinModels[model].datasets[dataset]
             except:
                 print(f"ERROR PLOTTING {dataset} OF {self.proteinModels[model].annotation}")
+
                 continue
 
             if ncols == 1:
@@ -128,7 +129,7 @@ class Comparator:
 
                 # Create annotation
                 ax.annotate(
-                    "Var. " + str(variant) + " : \n" + label + " +/- \n" + str(error_label),  # Use `label` as label
+                    str(variant) + " : \n" + label + " +/- \n" + str(error_label),  # Use `label` as label
                     (x_value, y_value),  # Place label at end of the bar
                     fontsize=self.setFontSizeMedium,
                     xytext=(0, space),  # Vertically shift label by `space`
@@ -193,7 +194,7 @@ class Comparator:
         handles = [plt.Rectangle((0, 0), 1, 1, color=legend_entries[label]) for label in labels]
         plt.legend(handles, labels, fontsize=self.setFontSizeMedium, loc='upper right')
 
-    def plot_umbrella(self, modelIndexes = None, fit = False, stderror = False, check_sampling = False, check_sampling_limit = 100, print_values = True):
+    def plot_umbrella(self, modelIndexes = None, fit = False, stderror = False, check_sampling = False, check_sampling_limit = 100, print_values = True, max_traj = None):
         """
         :param modelIndexes: Which models (zero indexing) to plot from the models included in this Comparator class (modelIndexes)
         :param fit: Do an exponential fit of the curve and calculate max. PMF
@@ -212,6 +213,7 @@ class Comparator:
                 profile_y = self.proteinModels[index].datasets['umbrella_profile'][1]
                 histo_x = self.proteinModels[index].datasets['umbrella_histogram'][0]
                 histo_y = self.proteinModels[index].datasets['umbrella_histogram'][1]
+
 
 
 
@@ -248,11 +250,9 @@ class Comparator:
 
 
 
-
                 if stderror:
                     profile_stderror = self.proteinModels[index].datasets['umbrella_profile'][2]
                     axs[0].errorbar(profile_x, profile_y, yerr=profile_stderror, capsize=5, ecolor='black')
-
                 axs[0].plot(profile_x, profile_y, color=self.setLineColor)
                 axs[0].set_title(r'$\zeta$ trajectory energy profile', fontsize=self.setFontSizeLarge)
                 axs[0].set_xlabel(r'$\zeta$ distance', fontsize=self.setFontSizeMedium)
@@ -266,6 +266,11 @@ class Comparator:
                 (through exponential fitting to defeat oscillations and bad convergence) to calculated DeltaG
                 
                 """
+
+
+
+
+                # If limits are set, this ignores them, so it can find a minimum outside the limits of profile_x, fix it
                 def get_minimum(profile_y, histo_y, histo_x):
                     sampling = []
                     for i, x in enumerate(histo_x):
@@ -283,40 +288,51 @@ class Comparator:
                             new_profile_y.append(profile_y[i])
 
                     return (min(new_profile_y))
-
+                """
                 def monoExp(x, m, t, b):
                     return m * np.exp(-t * x) + b
 
-                p0 = (0, 2, 4)
-                params, cv = scipy.optimize.curve_fit(monoExp, profile_x, profile_y, p0, maxfev=10000)
+                p0 = (0, 2, 20)
+                if max_traj:
+                    limited_profile_x = [x for x in profile_x if float(x) < max_traj]
+                    limited_profile_y = profile_y[:len(limited_profile_x)]
+                    params, cv = scipy.optimize.curve_fit(monoExp, limited_profile_x, limited_profile_y, p0, maxfev=10000)
+                else:
+                    params, cv = scipy.optimize.curve_fit(monoExp, profile_x, profile_y, p0, maxfev=10000)
                 m, t, b = params
 
                 exp_y = []
                 for value in profile_x:
                     exp_y.append(monoExp(value, m, t, b))
 
-                minimum = get_minimum(profile_y, histo_y, histo_x)
+                
                 maximum = b
+                """
+
+                if max_traj:
+                    limited_profile_x = [x for x in profile_x if float(x) < max_traj]
+                    limited_profile_y = profile_y[:len(limited_profile_x)]
+                    maximum = max(limited_profile_y)
+                else:
+                    maximum = max(profile_y)
+                minimum = get_minimum(profile_y, histo_y, histo_x)
+
                 delta = round(maximum - minimum, 2)
 
                 print(f'{self.proteinModels[index].annotation} min {minimum} upper {maximum}, delta {delta}')
                 axs[0].plot(profile_x, [minimum for i in profile_x], color='red', label=f'{delta} kJ/mol')
                 axs[0].plot(profile_x, [maximum for i in profile_x], color='red')
                 axs[0].legend()
-
+                if max_traj:
+                    axs[0].set_xlim(right=max_traj)
+                    axs[1].set_xlim(right=max_traj)
 
 
                 """
                 END OF METHOD
                 """
 
-
-
-
-
-
-
-
+                #plt.savefig(f'/run/media/sulcjo/Data/in silico/transfer/OBRAZKY/sirah/atomistic_{self.proteinModels[index].annotation}.png')
 
                 if fit:
 
@@ -512,8 +528,9 @@ class Comparator:
 
             """
             Temporary to show only some protein parts (only experimentally identified key interaction residues of the antibody
-            """
             
+            
+            print(self.proteinModels[index].seq_1)
             antibody_key_residues = ['W33', 'R50', 'E53', 'Y99', 'F100A', 'G100D', 'P100F', 'P100G', 'E100I', 'E100J', ]
             antibody_key_residues_indexes = []
             for i, aminoacid in enumerate(self.proteinModels[index].seq_1):
@@ -522,15 +539,17 @@ class Comparator:
             #Non-key columns have to be removed 2x (once as rows in transposed, once as columns in normal - matrix is diagonally symetrical)
             #dataframe = dataframe.T
             for col in dataframe.columns:
-                if col not in antibody_key_residues_indexes and col < 240:
+                if col not in antibody_key_residues_indexes and col < 239:
                     dataframe[col].values[:] = 0
             dataframe = dataframe.T
             for col in dataframe.columns:
-                if col not in antibody_key_residues_indexes and col < 240:
+                if col not in antibody_key_residues_indexes and col < 239:
                     dataframe[col].values[:] = 0
             dataframe = dataframe.T
 
+            print(self.proteinModels[index].seq_1)
 
+"""
             excel_dataframe = pd.DataFrame(dataframe)
             excel_dataframe.columns = self.proteinModels[index].seq_3_chains
             excel_dataframe = excel_dataframe.loc[:, (excel_dataframe != 0).any(axis=0)]
@@ -539,8 +558,12 @@ class Comparator:
             excel_dataframe = excel_dataframe.loc[:, (excel_dataframe != 0).any(axis=0)]
             excel_dataframe = excel_dataframe.T
 
-
-            excel_dataframe.to_excel(f'/run/media/sulcjo/Data/in silico/transfer/OBRAZKY/{self.proteinModels[index].annotation}.xlsx')
+            if dataset == 'total_IEM':
+                excel_dataframe.to_excel(f'/run/media/sulcjo/Data/in silico/transfer/OBRAZKY/all_{self.proteinModels[index].annotation}_total.xlsx')
+            elif dataset == 'elec_IEM':
+                excel_dataframe.to_excel(f'/run/media/sulcjo/Data/in silico/transfer/OBRAZKY/all_{self.proteinModels[index].annotation}_elec.xlsx')
+            elif dataset == 'vdw_IEM':
+                excel_dataframe.to_excel(f'/run/media/sulcjo/Data/in silico/transfer/OBRAZKY/all_{self.proteinModels[index].annotation}_vdw.xlsx')
 
 
 
@@ -737,6 +760,14 @@ class Comparator:
 
 
             plt.suptitle(title, size=self.setFontSizeLarge)
+            if dataset == 'total_IEM':
+                plt.savefig(f'/run/media/sulcjo/Data/in silico/transfer/OBRAZKY/all_{self.proteinModels[index].annotation}_totalIEMsquare.png')
+            elif dataset == 'elec_IEM':
+                plt.savefig(f'/run/media/sulcjo/Data/in silico/transfer/OBRAZKY/all_{self.proteinModels[index].annotation}_elecIEMsquare.xlsx')
+            elif dataset == 'vdw_IEM':
+                plt.savefig(f'/run/media/sulcjo/Data/in silico/transfer/OBRAZKY/all_{self.proteinModels[index].annotation}_vdwIEMsquare.xlsx')
+
+
 
     def show(self):
 
