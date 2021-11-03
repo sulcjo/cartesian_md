@@ -167,7 +167,7 @@ compareMPER.show()
 
 
 
-
+"""
 MLA024 = proteinModel.quick_load(
     {
     f'{base_path}/mmpbsa_gmxmmpbsa/24/***/results/FINAL_RESULTS_MMPBSA.dat' : ((2,10), ('gmxmmpbsa')),
@@ -271,4 +271,33 @@ compareMLAWT = Comparator(proteinModels=MLAWT)
 #model23_delta = compare158.compare_IEM(modelIndexes=[0,1])
 compareMLAWT.plot_IEM(modelIndexes=[0,1], write_best_pairs=False, mark_resis=mark_resis, dataset='total_IEM')
 compareMLAWT.show()
+"""
 
+base_path = '/home/sulcjo/IOCB/md'
+fusion_domains = proteinModel.quick_load(
+    {
+    f'{base_path}/***/xmgrace/gyrate.xvg' : (('trp_gggggg_pdz_closed_400ns','trp_gggggg_pdz_open','pdz_gggggg_trp_150ns'), ('rg')),
+    f'***' : (('/home/sulcjo/IOCB/grinn_linux_v110_hf1/trp_gggggg_pdz_closed/system_dry.pdb',
+                           '/home/sulcjo/IOCB/grinn_linux_v110_hf1/trp_gggggg_pdz_open/system_dry.pdb',
+                           '/home/sulcjo/IOCB/grinn_linux_v110_hf1/pdz_gggggg_trp_stride1/system_dry.pdb'), ('sequence'))
+    }, handles={'***' : ('TrpFace-GGGGGG-PDZ3(closed)', 'TrpCage-GGGGGG-PDZ3(open)', 'PDZ3-GGGGGG-TrpCage')}
+)
+
+
+#fusion_compare.plot_simple_dataset('contacts')
+
+fusion_domains[0].split = [(1,22),(31,119)]
+fusion_domains[0].DSSP_assign()
+fusion_domains[1].split = [(1,22),(31,119)]
+fusion_domains[1].DSSP_assign()
+fusion_domains[2].split = [(1,81),(89,108)]
+fusion_domains[2].DSSP_assign()
+fusion_domains[0].get_GRINN_datasets('/home/sulcjo/IOCB/grinn_linux_v110_hf1/trp_gggggg_pdz_closed')
+fusion_domains[1].get_GRINN_datasets('/home/sulcjo/IOCB/grinn_linux_v110_hf1/trp_gggggg_pdz_open')
+fusion_domains[2].get_GRINN_datasets('/home/sulcjo/IOCB/grinn_linux_v110_hf1/pdz_gggggg_trp')
+
+fusion_compare = Comparator(proteinModels=fusion_domains)
+fusion_compare.plot_IEM(modelIndexes=[0,1,2], write_best_pairs=True, dataset='total_IEM')
+fusion_compare.compare_IEM(modelIndexes=[0,1])
+
+fusion_compare.show()

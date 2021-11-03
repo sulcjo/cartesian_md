@@ -49,7 +49,6 @@ class proteinModel:
             self.split = split
             self.Cdatasets = {}
 
-
     @staticmethod
     def is_iterable(set):
         if isinstance(set, tuple) or isinstance(set, list) or isinstance(set, types.GeneratorType) or isinstance(
@@ -422,7 +421,6 @@ class proteinModel:
 
         with open(path) as pdb_file:
 
-
             residues = []
             pdb_lines = pdb_file.readlines()
             remember_last_resindex = 0
@@ -434,7 +432,6 @@ class proteinModel:
                     remember_last_resindex = split_line[5]
             pdb_file.seek(0)
             self.pdb_file = pdb_file.read()
-
 
         self.seq_3_chains = residues
         self.seq_3 = [residue[1:] for residue in residues]

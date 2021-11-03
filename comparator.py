@@ -559,11 +559,11 @@ class Comparator:
             excel_dataframe = excel_dataframe.T
 
             if dataset == 'total_IEM':
-                excel_dataframe.to_excel(f'/run/media/sulcjo/Data/in silico/transfer/OBRAZKY/all_{self.proteinModels[index].annotation}_total.xlsx')
+                excel_dataframe.to_excel(f'/home/sulcjo/IOCB/md/grinn/all_{self.proteinModels[index].annotation}_total.xlsx')
             elif dataset == 'elec_IEM':
-                excel_dataframe.to_excel(f'/run/media/sulcjo/Data/in silico/transfer/OBRAZKY/all_{self.proteinModels[index].annotation}_elec.xlsx')
+                excel_dataframe.to_excel(f'/home/sulcjo/IOCB/md/grinn/all_{self.proteinModels[index].annotation}_elec.xlsx')
             elif dataset == 'vdw_IEM':
-                excel_dataframe.to_excel(f'/run/media/sulcjo/Data/in silico/transfer/OBRAZKY/all_{self.proteinModels[index].annotation}_vdw.xlsx')
+                excel_dataframe.to_excel(f'/home/sulcjo/IOCB/md/grinn/all_{self.proteinModels[index].annotation}_vdw.xlsx')
 
 
 
@@ -761,11 +761,11 @@ class Comparator:
 
             plt.suptitle(title, size=self.setFontSizeLarge)
             if dataset == 'total_IEM':
-                plt.savefig(f'/run/media/sulcjo/Data/in silico/transfer/OBRAZKY/all_{self.proteinModels[index].annotation}_totalIEMsquare.png')
+                plt.savefig(f'/home/sulcjo/IOCB/md/grinn/all_{self.proteinModels[index].annotation}_totalIEMsquare.png')
             elif dataset == 'elec_IEM':
-                plt.savefig(f'/run/media/sulcjo/Data/in silico/transfer/OBRAZKY/all_{self.proteinModels[index].annotation}_elecIEMsquare.xlsx')
+                plt.savefig(f'/home/sulcjo/IOCB/md/grinn/all_{self.proteinModels[index].annotation}_elecIEMsquare.xlsx')
             elif dataset == 'vdw_IEM':
-                plt.savefig(f'/run/media/sulcjo/Data/in silico/transfer/OBRAZKY/all_{self.proteinModels[index].annotation}_vdwIEMsquare.xlsx')
+                plt.savefig(f'/home/sulcjo/IOCB/md/grinn/all_{self.proteinModels[index].annotation}_vdwIEMsquare.xlsx')
 
 
 
