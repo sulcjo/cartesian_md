@@ -10,6 +10,7 @@ import re
 import os
 from operator import itemgetter
 
+
 def get_simple_dataset(path):
     with open(path, "r") as file:
         read = file.readlines()
@@ -345,7 +346,7 @@ def plot_ramachandran(dataset, title = '', limit_resi = [0,100], limres = None, 
             axs[row][col].set_ylabel('Psi', fontsize=16)
         col += 1
 
-def plot_angles_chi(dataset_array, title='', plot='scatter'):
+def plot_angles_chi(dataset_array, title='', plot='scatter', corr=False, rama=False):
 
     """
     Included dataset array looks like this:
@@ -365,6 +366,7 @@ def plot_angles_chi(dataset_array, title='', plot='scatter'):
 
     num_plots = len(dataset_array)
 
+
     print(num_plots)
     if num_plots > 1:
         # Maximum number of chi angles in any canonical aminoacid is 6, plus 2 for psi and chi
@@ -378,9 +380,13 @@ def plot_angles_chi(dataset_array, title='', plot='scatter'):
         row = 0
         col = 0
         for dataset in dataset_array:
+            if rama:
+                dataset = [dataset[0], dataset[1], dataset[2]]
+
+
             current_aminoacid = re.findall('[A-Z]{3}[1-9]*', dataset[0])
 
-            if  current_aminoacid != last_aminoacid:
+            if  current_aminoacid != last_aminoacid and nrows > 1:
                 row += 1
                 col = 0
             last_aminoacid = re.findall('[A-Z]{3}[1-9]*', dataset[0])
@@ -394,19 +400,24 @@ def plot_angles_chi(dataset_array, title='', plot='scatter'):
                     axs[row][col].plot(dataset[1], dataset[2])
                 axs[row][col].set_title(dataset[0])
                 # A quick and dirty fix to see if it's plotting correlation or angle data (corr doesn't go over 1)
-                if max(dataset[2]) > 1:
+                if not corr:
                     axs[row][col].set(ylim=(-180, 180))
+                    if rama:
+                        axs[row][col].set(xlim=(-180, 180))
                 else:
                     axs[row][col].set(ylim=(-1,1))
-            else:
+            elif nrows == 1:
+                print(f'populating col:{col} with {current_aminoacid}')
                 if plot == 'scatter':
                     axs[col].scatter(dataset[1], dataset[2], s=1)
                 elif plot == 'line':
                     axs[col].plot(dataset[1], dataset[2])
 
                 axs[col].set_title(dataset[0])
-                if max(dataset[2]) > 1:
+                if not corr:
                     axs[col].set(ylim=(-180, 180))
+                    if rama:
+                        axs[col].set(xlim=(-180,180))
                 else:
                     axs[col].set(ylim=(-1,1))
             col += 1
@@ -414,6 +425,7 @@ def plot_angles_chi(dataset_array, title='', plot='scatter'):
 
 base_path = '/run/media/sulcjo/sulcjo-data/IOCB/md/trp_gggggg_pdz_open/chi/pyplot/'
 base_path_corr = '/run/media/sulcjo/sulcjo-data/IOCB/md/trp_gggggg_pdz_open/chi/corrs/pyplot/'
+base_path_ramas = '/run/media/sulcjo/sulcjo-data/IOCB/md/trp_gggggg_pdz_open/chi/ramas/pyplot/'
 def obtain_dataset_array(path):
 
     dataset_array = []
@@ -482,9 +494,28 @@ def obtain_dataset_array(path):
 
 angles_dataset = obtain_dataset_array(base_path)
 correlation_dataset = obtain_dataset_array(base_path_corr)
+ramas_dataset = obtain_dataset_array(base_path_ramas)
+
+
+
+def cross_correlate_simple_datasets_to_one(dataset_array, cc_target_dataset):
+    cc_datasets = []
+    for dataset in dataset_array:
+        df1 = pd.DataFrame(dataset[2])
+        df2 = pd.DataFrame(cc_target_dataset[1])
+
+
+        cc_datasets.append([dataset[0], df1.corrwith(df2)])
+    return(cc_datasets)
+
+
+#correlation_dataset = cross_correlate_simple_datasets_to_one(angles_dataset, get_simple_dataset('/run/media/sulcjo/sulcjo-data/IOCB/md/trp_gggggg_pdz_open/xmgrace/domains_distance_b25000.xvg'))
+#print(correlation_dataset[0])
+#exit()
 
 plot_angles_chi(angles_dataset, title='TrpCage-GGGGGG-PDZ3 open start')
-plot_angles_chi(correlation_dataset, title='TrpCage-GGGGGG-PDZ3 open start', plot='line')
+plot_angles_chi(correlation_dataset, title='TrpCage-GGGGGG-PDZ3 open start', plot='line', corr=True)
+plot_angles_chi(ramas_dataset,title='TrpCage-GGGGGG-PDZ3 open start RAMA', plot='scatter', rama=True)
 
 """
 # Load RMSD
