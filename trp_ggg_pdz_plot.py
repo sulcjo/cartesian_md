@@ -9,7 +9,19 @@ import math
 import re
 import os
 from operator import itemgetter
+from scipy.optimize import curve_fit
 
+SMALL_SIZE = 14
+MEDIUM_SIZE = 16
+BIGGER_SIZE = 24
+
+plt.rc('font', size=SMALL_SIZE)          # controls default text sizes
+plt.rc('axes', titlesize=SMALL_SIZE)     # fontsize of the axes title
+plt.rc('axes', labelsize=MEDIUM_SIZE)    # fontsize of the x and y labels
+plt.rc('xtick', labelsize=SMALL_SIZE)    # fontsize of the tick labels
+plt.rc('ytick', labelsize=SMALL_SIZE)    # fontsize of the tick labels
+plt.rc('legend', fontsize=SMALL_SIZE)    # legend fontsize
+plt.rc('figure', titlesize=BIGGER_SIZE)  # fontsize of the figure title
 
 def get_simple_dataset(path):
     with open(path, "r") as file:
@@ -305,11 +317,12 @@ def plot_ramachandran(dataset, title = '', limit_resi = [0,100], limres = None, 
         print(f'{residue} len {len(y)}')
         print('Current col: ' + str(col))
         print('Current rows: ' + str(row))
+        data = pd.DataFrame([x, y, times])
+        data = data.T
+        data.columns = ('x', 'y', 'times')
 
         if time_coloring:
-            data = pd.DataFrame([x,y, times])
-            data = data.T
-            data.columns = ('x','y','times')
+
 
             norm = plt.Normalize(data['times'].min(), data['times'].max())
             sm = plt.cm.ScalarMappable(cmap="RdBu", norm=norm)
@@ -325,6 +338,7 @@ def plot_ramachandran(dataset, title = '', limit_resi = [0,100], limres = None, 
 
 
         else:
+
             if rows == 1:
                 sns.scatterplot(data=data, x='x', y='y', s=5, ax=axs[i])
             else:
@@ -372,7 +386,8 @@ def plot_angles_chi(dataset_array, title='', plot='scatter', corr=False, rama=Fa
         # Maximum number of chi angles in any canonical aminoacid is 6, plus 2 for psi and chi
         nrows = math.ceil(num_plots / 8)
         fig, axs = plt.subplots(ncols=8, nrows=nrows)
-
+        for ax in fig.axes:
+            ax.set_axis_off()
         # Now iterate through the dataset array and see if the current iteration is the same aminoacid as before
         # In that case keep it in the current row, else (different AA) skip to next row
         # v this splits the aminoacid name chain after the first CAPITAL letter (file names such as phiARG44, chi1GLY65)
@@ -393,8 +408,9 @@ def plot_angles_chi(dataset_array, title='', plot='scatter', corr=False, rama=Fa
 
             if nrows > 1:
                 print(f'populating row:{row} col:{col} with {current_aminoacid}')
-
+                axs[row][col].set_axis_on()
                 if plot == 'scatter':
+
                     axs[row][col].scatter(dataset[1], dataset[2], s=1)
                 elif plot == 'line':
                     axs[row][col].plot(dataset[1], dataset[2])
@@ -402,12 +418,25 @@ def plot_angles_chi(dataset_array, title='', plot='scatter', corr=False, rama=Fa
                 # A quick and dirty fix to see if it's plotting correlation or angle data (corr doesn't go over 1)
                 if not corr:
                     axs[row][col].set(ylim=(-180, 180))
+                    if col == 0:
+                        axs[row][col].set_xlabel('Time / ns')
+                    if row == nrows-1:
+                        axs[row][col].set_ylabel('Angle / deg')
                     if rama:
                         axs[row][col].set(xlim=(-180, 180))
+                        if col == 0:
+                            axs[row][col].set_xlabel('Chi1')
+                        if row == nrows - 1:
+                            axs[row][col].set_ylabel('Chi2')
                 else:
                     axs[row][col].set(ylim=(-1,1))
+                    if col == 0:
+                        axs[row][col].set_ylabel('C(t)')
+                    if row == nrows-1:
+                        axs[row][col].set_xlabel('Time / ns')
             elif nrows == 1:
                 print(f'populating col:{col} with {current_aminoacid}')
+                axs[col].set_axis_on()
                 if plot == 'scatter':
                     axs[col].scatter(dataset[1], dataset[2], s=1)
                 elif plot == 'line':
@@ -416,16 +445,21 @@ def plot_angles_chi(dataset_array, title='', plot='scatter', corr=False, rama=Fa
                 axs[col].set_title(dataset[0])
                 if not corr:
                     axs[col].set(ylim=(-180, 180))
+                    axs[col].set_xlabel('Time / ns')
+                    axs[col].set_ylabel('Angle / deg')
                     if rama:
                         axs[col].set(xlim=(-180,180))
+                        axs[col].set_xlabel('Chi1')
+                        axs[col].set_ylabel('Chi2')
                 else:
                     axs[col].set(ylim=(-1,1))
+                    axs[col].set_ylabel('C(t)')
+                    axs[col].set_xlabel('Time / ns')
             col += 1
         plt.suptitle(title)
 
-base_path = '/run/media/sulcjo/sulcjo-data/IOCB/md/trp_gggggg_pdz_open/chi/pyplot/'
-base_path_corr = '/run/media/sulcjo/sulcjo-data/IOCB/md/trp_gggggg_pdz_open/chi/corrs/pyplot/'
-base_path_ramas = '/run/media/sulcjo/sulcjo-data/IOCB/md/trp_gggggg_pdz_open/chi/ramas/pyplot/'
+
+
 def obtain_dataset_array(path):
 
     dataset_array = []
@@ -492,30 +526,58 @@ def obtain_dataset_array(path):
 
     return(dataset_array)
 
-angles_dataset = obtain_dataset_array(base_path)
-correlation_dataset = obtain_dataset_array(base_path_corr)
-ramas_dataset = obtain_dataset_array(base_path_ramas)
+def get_rdf_time(path, filename_contain='cn_rdf.xvg', index = 2.5):
+    """
+    This function is used to plot RDF / specified time index to see the solvatation dynamics
+    Index is customizable
+    Sigmoid fitting also available (upper plateau - solvation max at time x)
+
+    :param path:
+    :param filename_contain:
+    :param index:
+    :return:
+    """
+
+    files = []
+    for file in os.listdir(path):
+        if filename_contain in file:
+            files.append(file)
+    dataset_array = []
+
+    def get_sorting_numbers(file_from_list):
+        list_re = re.findall('\d+', file_from_list)
+        return(list(map(int, list_re)))
 
 
 
-def cross_correlate_simple_datasets_to_one(dataset_array, cc_target_dataset):
-    cc_datasets = []
-    for dataset in dataset_array:
-        df1 = pd.DataFrame(dataset[2])
-        df2 = pd.DataFrame(cc_target_dataset[1])
+    files = sorted(files, key=get_sorting_numbers)
 
 
-        cc_datasets.append([dataset[0], df1.corrwith(df2)])
-    return(cc_datasets)
+    for file in files:
+        dataset_array.append(get_simple_dataset(path+file))
 
 
-#correlation_dataset = cross_correlate_simple_datasets_to_one(angles_dataset, get_simple_dataset('/run/media/sulcjo/sulcjo-data/IOCB/md/trp_gggggg_pdz_open/xmgrace/domains_distance_b25000.xvg'))
-#print(correlation_dataset[0])
-#exit()
+    fig, axs = plt.subplots()
+    dataset_at_index = [[], []]
+    for time, dataset in enumerate(dataset_array):
+        for x, y in zip(dataset[0], dataset[1]):
+            if x == index:
+                dataset_at_index[0].append(time*10)
+                dataset_at_index[1].append(y)
+    return(dataset_at_index)
 
-plot_angles_chi(angles_dataset, title='TrpCage-GGGGGG-PDZ3 open start')
-plot_angles_chi(correlation_dataset, title='TrpCage-GGGGGG-PDZ3 open start', plot='line', corr=True)
-plot_angles_chi(ramas_dataset,title='TrpCage-GGGGGG-PDZ3 open start RAMA', plot='scatter', rama=True)
+
+#base_path = '/run/timeshift/backup/IOCB/md/trp_gggggg_pdz_closed_i/chi/pyplot/'
+#base_path_corr = '/run/timeshift/backup/IOCB/md/trp_gggggg_pdz_closed_i/chi/corrs/pyplot/'
+#base_path_ramas = '/run/timeshift/backup/IOCB/md/trp_gggggg_pdz_closed_i/chi/ramas/pyplot/'
+#angles_dataset = obtain_dataset_array(base_path)
+#correlation_dataset = obtain_dataset_array(base_path_corr)
+#ramas_dataset = obtain_dataset_array(base_path_ramas)
+
+
+#plot_angles_chi(angles_dataset, title='TrpCage-GGGGGG-PDZ3 closed start')
+#plot_angles_chi(correlation_dataset, title='TrpCage-GGGGGG-PDZ3 closed start self-correlation', plot='line', corr=True)
+#plot_angles_chi(ramas_dataset,title='TrpCage-GGGGGG-PDZ3 closed start RAMA', plot='scatter', rama=True)
 
 """
 # Load RMSD
@@ -523,96 +585,99 @@ plot_angles_chi(ramas_dataset,title='TrpCage-GGGGGG-PDZ3 open start RAMA', plot=
 #rg = get_simple_dataset('/home/sulcjo/IOCB/md/trp_gggggg_pdz_closed_400ns/xmgrace')
 #domain_distance = get_simple_dataset('/home/sulcjo/IOCB/md/trp_gggggg_pdz_closed_400ns/xmgrace')
 """
-
+"""
 # Load umbrella contacts, histograms and pmf curve
-#us_contacts = get_simple_dataset('/run/media/sulcjo/sulcjo-data/IOCB/md/umbrella/nolinker/wham_results/contacts_pulling.xvg')
-#pmf_curve = get_umbrella_profile('/run/media/sulcjo/sulcjo-data/IOCB/md/umbrella/nolinker/wham_results/profile_errors.xvg')
-#pmf_histograms = get_umbrella_histogram('/run/media/sulcjo/sulcjo-data/IOCB/md/umbrella/nolinker/wham_results/histo.xvg')
-
+us_contacts = get_simple_dataset('/run/media/sulcjo/sulcjo-data/IOCB/md/umbrella/cluster5/cluster5/wham_results/contacts_pulling.xvg')
+pmf_curve = get_umbrella_profile('/run/media/sulcjo/sulcjo-data/IOCB/md/umbrella/cluster5/cluster5/wham_results/profile_errors.xvg')
+pmf_histograms = get_umbrella_histogram('/run/media/sulcjo/sulcjo-data/IOCB/md/umbrella/cluster5/cluster5/wham_results/histo.xvg')
+solvation_curve_25 = get_rdf_time('/run/media/sulcjo/sulcjo-data/IOCB/md/umbrella/cluster5/cluster5/wham_results/', index=2.0)
 
 ## Plot US
-"""
-fig_us, axs_us = plt.subplots(nrows=3, ncols=1, gridspec_kw={'height_ratios' : [3,1,1]})
+
+fig_us, axs_us = plt.subplots(nrows=4, ncols=1, gridspec_kw={'height_ratios' : [3,2,1,2]})
 setLineColor = 'blue'
 setFontSizeLarge = 18
 setFontSizeMedium = 14
 
 axs_us[0].errorbar(pmf_curve[0], pmf_curve[1], yerr=pmf_curve[2], capsize=5, ecolor='black',color=setLineColor)
-axs_us[0].set_title('PMF Curve for TrpCage...PDZ3 pulling', fontsize=setFontSizeLarge)
+axs_us[0].set_title('PMF Curve for Cluster5 TrpCage-GGGGGG-PDZ3 pulling', fontsize=setFontSizeLarge)
 axs_us[0].set_ylabel('PMF / kJ/mol', fontsize=setFontSizeMedium)
 
+
+axs_us[1].scatter(solvation_curve_25[0],solvation_curve_25[1])
+axs_us[1].set_title('SOL molecules around com of TrpCage vs time @ r=2.0 nm')
+axs_us[1].set_ylabel('SOL molecules')
+rdf_time = pd.DataFrame(solvation_curve_25[1]).rolling(30).mean()
+axs_us[1].plot(solvation_curve_25[0],rdf_time)
+
 for run in pmf_histograms[1]:
-    axs_us[1].plot(pmf_histograms[0], run, color=setLineColor)
-axs_us[1].set_title('Histograms', fontsize=setFontSizeLarge)
-axs_us[1].set_ylabel('Counts', fontsize=setFontSizeMedium)
+    axs_us[2].plot(pmf_histograms[0], run, color=setLineColor)
+axs_us[2].set_title('Histograms', fontsize=setFontSizeLarge)
+axs_us[2].set_ylabel('Counts', fontsize=setFontSizeMedium)
 axs_us[2].set_xlabel('COM-COM distance / nm', fontsize=setFontSizeMedium)
 
-axs_us[2].plot(us_contacts[0], us_contacts[1], color=setLineColor)
-axs_us[2].set_title('< 0.6 nm contacts', fontsize=setFontSizeLarge)
-axs_us[2].set_xlabel('Time / ns', fontsize=setFontSizeMedium)
-axs_us[2].set_ylabel('Count', fontsize=setFontSizeMedium)
+axs_us[3].plot(us_contacts[0], us_contacts[1], color=setLineColor)
+axs_us[3].set_title('< 0.6 nm contacts', fontsize=setFontSizeLarge)
+axs_us[3].set_xlabel('Time / ns', fontsize=setFontSizeMedium)
+axs_us[3].set_ylabel('Count', fontsize=setFontSizeMedium)
 """
 
 #plot_3D_scatter(rama, angle_coloring=True, title='Linker (TrpCage-GGGGGG-PDZ3)', limit_resi=(24,30))
 #plot_angles(rama, 'Phi', ma=True, angle_limits = (-90, -35), title='US Linker (TrpCage-GGGGGG-PDZ3)', limit_resi=(24,30))
 #plot_angles(rama, 'Psi', ma=True, angle_limits = (-70, -15), title='US Linker (TrpCage-GGGGGG-PDZ3)', limit_resi=(24,30))
-
-#fig_md_closed, axs_md_closed = plt.subplots(nrows=3, ncols=1, gridspec_kw={'height_ratios' : [3,1,1]})
-#rama_md = read_rama('/run/media/sulcjo/sulcjo-data/IOCB/md/trp_gggggg_pdz_closed_400ns/rama.xvg')
-#plot_angles(rama_md, 'Phi', ma=True, angle_limits = None, title='MD Linker (TrpCage-GGGGGG-PDZ3 closed start)', limit_resi=(0,100), limres = ['GLY-24' ,'GLY-25', 'GLY-26', 'GLY-27', 'GLY-28', 'GLY-29', 'GLY-30'])
-#plot_angles(rama_md, 'Psi', ma=True, angle_limits = None, title='MD Linker (TrpCage-GGGGGG-PDZ3 closed start)', limit_resi=(0,100), limres = ['GLY-24' ,'GLY-25', 'GLY-26', 'GLY-27', 'GLY-28', 'GLY-29', 'GLY-30'])
-#plot_ramachandran(rama_md, title='MD Linker (TrpCage-GGGGGG-PDZ3 open start)', limit_resi=(0,100), limres = ['GLY-24' ,'GLY-25', 'GLY-26', 'GLY-27', 'GLY-28', 'GLY-29', 'GLY-30'])
-
+"""
 fig_md_closed, axs_md_closed = plt.subplots(nrows=3, ncols=1, gridspec_kw={'height_ratios' : [3,1,1]})
+rama_md = read_rama('/run/timeshift/backup/IOCB/md/trp_pdz_open_amber/rama.xvg')
+plot_angles(rama_md, 'Phi', ma=True, angle_limits = None, title='MD Linker (TrpCage-GGGGGG-PDZ3 open start AMBER)', limit_resi=(0,100), limres = ['GLY-24' ,'GLY-25', 'GLY-26', 'GLY-27', 'GLY-28', 'GLY-29', 'GLY-30'])
+plot_angles(rama_md, 'Psi', ma=True, angle_limits = None, title='MD Linker (TrpCage-GGGGGG-PDZ3 open start AMBER)', limit_resi=(0,100), limres = ['GLY-24' ,'GLY-25', 'GLY-26', 'GLY-27', 'GLY-28', 'GLY-29', 'GLY-30'])
+plot_ramachandran(rama_md, title='MD Linker (TrpCage-GGGGGG-PDZ3 open start AMBER)', limit_resi=(0,100), limres = ['GLY-24' ,'GLY-25', 'GLY-26', 'GLY-27', 'GLY-28', 'GLY-29', 'GLY-30'], time_coloring=True)
+"""
+#fig_md_closed, axs_md_closed = plt.subplots(nrows=3, ncols=1, gridspec_kw={'height_ratios' : [3,1,1]})
 #rama_md = read_rama('/run/media/sulcjo/sulcjo-data/IOCB/md/pdz_gggggg_trp_150ns/rama.xvg')
 #plot_angles(rama_md, 'Phi', ma=True, angle_limits = None, title='MD Linker (PDZ3-GGGGGG-TrpCage)', limit_resi=(0,100), limres = ['GLY-83' ,'GLY-84', 'GLY-85', 'GLY-86', 'GLY-87', 'GLY-88'])
 #plot_angles(rama_md, 'Psi', ma=True, angle_limits = None, title='MD Linker (PDZ3-GGGGGG-TrpCage)', limit_resi=(0,100), limres = ['GLY-83' ,'GLY-84', 'GLY-85', 'GLY-86', 'GLY-87', 'GLY-88'])
 #plot_ramachandran(rama_md, title='MD Linker (PDZ3-GGGGGG-TrpCage)', limit_resi=(0,100), limres = ['GLY-83' ,'GLY-84', 'GLY-85', 'GLY-86', 'GLY-87', 'GLY-88'], time_coloring=True)
 
 """
-plot_angles(rama_md, 'Phi', ma=True, angle_limits = None, title='MD Linker (TrpCage-GGGGGG-PDZ3 closed start)', limit_resi=(0,100), limres = ['ARG-97', 'GLU-98'])
-plot_angles(rama_md, 'Psi', ma=True, angle_limits = None, title='MD Linker (TrpCage-GGGGGG-PDZ3 closed start)', limit_resi=(0,100), limres = ['ARG-97', 'GLU-98'])
-
-rama_md = read_rama('/run/media/sulcjo/sulcjo-data/IOCB/md/trp_gggggg_pdz_open/rama.xvg')
-plot_ramachandran(rama_md, title='MD Linker (TrpCage-GGGGGG-PDZ3 open start)', limit_resi=(0,100), limres = ['GLY-24' ,'GLY-25', 'GLY-26', 'GLY-27', 'GLY-28', 'GLY-29', 'GLY-30'], time_coloring=True)
-
+fig_md_closed, axs_md_closed = plt.subplots(nrows=3, ncols=1, gridspec_kw={'height_ratios' : [3,1,1]})
+rama_md = read_rama('/run/timeshift/backup/IOCB/md/trp_pdz_open_amber/rama.xvg')
+plot_angles(rama_md, 'Phi', ma=True, angle_limits = None, title='MD Linker (TrpCage-GGGGGG-PDZ3 closed start) 800 ns', limit_resi=(0,100), limres = ['GLY-24' ,'GLY-25', 'GLY-26', 'GLY-27', 'GLY-28', 'GLY-29', 'GLY-30'])
+plot_angles(rama_md, 'Psi', ma=True, angle_limits = None, title='MD Linker (TrpCage-GGGGGG-PDZ3 closed start) 800 ns', limit_resi=(0,100), limres = ['GLY-24' ,'GLY-25', 'GLY-26', 'GLY-27', 'GLY-28', 'GLY-29', 'GLY-30'])
+plot_ramachandran(rama_md, title='MD Linker (TrpCage-GGGGGG-PDZ3 closed start) 800 ns', limit_resi=(0,100), limres = ['GLY-24' ,'GLY-25', 'GLY-26', 'GLY-27', 'GLY-28', 'GLY-29', 'GLY-30'], time_coloring=True)
+"""
+"""
 fig_us, axs_us = plt.subplots(nrows=3, ncols=1)
-setLineColor = 'blue'
-setFontSizeLarge = 18
-setFontSizeMedium = 14
 
-domain_distance = get_simple_dataset('/run/media/sulcjo/sulcjo-data/IOCB/md/trp_pdz_closed_nolinker/xmgrace/distance_domains.xvg')
-domain_distance_open = get_simple_dataset('/run/media/sulcjo/sulcjo-data/IOCB/md/trp_gggggg_pdz_open/xmgrace/distance_domains.xvg')
-axs_us[0].plot(domain_distance[0], domain_distance[1],color=setLineColor, label='Closed start')
-axs_us[0].plot(domain_distance_open[0], domain_distance_open[1], color='red',label='Open Start')
-axs_us[0].set_title('TrpCage...PDZ3 no linker COM distances (closed start)', fontsize=setFontSizeLarge)
-axs_us[0].set_title('TrpCage-GGGGGG-PDZ3 COM distances', fontsize=setFontSizeLarge)
-axs_us[0].set_ylabel('d / nm', fontsize=setFontSizeMedium)
+domain_distance = get_simple_dataset('/run/timeshift/backup/IOCB/md/trp_pdz_open_amber/xmgrace/distance_domains.xvg')
+#domain_distance_open = get_simple_dataset('/run/media/sulcjo/sulcjo-data/IOCB/md/trp_gggggg_pdz_open/xmgrace/distance_domains.xvg')
+axs_us[0].plot(domain_distance[0], domain_distance[1])
+#axs_us[0].plot(domain_distance_open[0], domain_distance_open[1], color='red',label='Open Start')
+axs_us[0].set_title('TrpCage-GGGGGG-PDZ3 COM distances (open start AMBER)')
+#axs_us[0].set_title('TrpCage-GGGGGG-PDZ3 COM distances')
+axs_us[0].set_ylabel('d / nm')
 axs_us[0].legend()
 
-domain_contacts = get_simple_dataset('/run/media/sulcjo/sulcjo-data/IOCB/md/trp_pdz_closed_nolinker/xmgrace/domains_contacts.xvg')
-domain_contacts_open = get_simple_dataset('/run/media/sulcjo/sulcjo-data/IOCB/md/trp_gggggg_pdz_open/xmgrace/domain_contacts.xvg')
-axs_us[1].plot(domain_contacts[0], domain_contacts[1],color=setLineColor)
-axs_us[1].plot(domain_contacts_open[0], domain_contacts_open[1],color='red')
-axs_us[1].set_title('TrpCage-GGGGGG-PDZ3 COM contacts', fontsize=setFontSizeLarge)
-axs_us[1].set_ylabel('count', fontsize=setFontSizeMedium)
+domain_contacts = get_simple_dataset('/run/timeshift/backup/IOCB/md/trp_pdz_open_amber/xmgrace/domain_contacts.xvg')
+#domain_contacts_open = get_simple_dataset('/run/media/sulcjo/sulcjo-data/IOCB/md/trp_gggggg_pdz_open/xmgrace/domain_contacts.xvg')
+axs_us[1].plot(domain_contacts[0], domain_contacts[1])
+#axs_us[1].plot(domain_contacts_open[0], domain_contacts_open[1],color='red')
+axs_us[1].set_title('TrpCage-GGGGGG-PDZ3 COM contacts (open start AMBER)')
+axs_us[1].set_ylabel('count')
 
-domain_histograms = get_simple_dataset('/run/media/sulcjo/sulcjo-data/IOCB/md/trp_pdz_closed_nolinker/xmgrace/domains_distance_histo.xvg')
-domain_histograms_open = get_simple_dataset('/run/media/sulcjo/sulcjo-data/IOCB/md/trp_gggggg_pdz_open/xmgrace/domains_distance_histo.xvg')
-axs_us[2].plot(domain_histograms[0], domain_histograms[1],color=setLineColor)
-axs_us[2].plot(domain_histograms_open[0], domain_histograms_open[1],color='red')
-axs_us[2].set_title('TrpCage-GGGGGG-PDZ3 COM distances frequency', fontsize=setFontSizeLarge)
-axs_us[2].set_ylabel('Count', fontsize=setFontSizeMedium)
+domain_histograms = get_simple_dataset('/run/timeshift/backup/IOCB/md/trp_pdz_open_amber/xmgrace/domains_distance_histo.xvg')
+#domain_histograms_open = get_simple_dataset('/run/media/sulcjo/sulcjo-data/IOCB/md/trp_gggggg_pdz_open/xmgrace/domains_distance_histo.xvg')
+axs_us[2].plot(domain_histograms[0], domain_histograms[1])
+#axs_us[2].plot(domain_histograms_open[0], domain_histograms_open[1],color='red')
+axs_us[2].set_title('TrpCage-GGGGGG-PDZ3 COM distances frequency (open start AMBER)')
+axs_us[2].set_ylabel('Count')
 
-#domain_distances_autocorr = get_simple_dataset('/home/sulcjo/IOCB/md/trp_gggggg_pdz_closed_400ns/xmgrace/autocorr_domain_distances.xvg')
-#axs_us[3].plot(domain_distances_autocorr[0], domain_distances_autocorr[1],color=setLineColor)
-#axs_us[3].set_title('PDZ3-TrpCage (Closed start) COM distances autocorrelation', fontsize=setFontSizeLarge)
-#axs_us[3].set_ylabel('G(t)', fontsize=setFontSizeMedium)
-#axs_us[3].set_xlabel('t / ps', fontsize=setFontSizeMedium)
+#domain_distances_autocorr = get_simple_dataset('/run/timeshift/backup/IOCB/md/trp_gggggg_pdz_closed_i/xmgrace/autocorr_domain_distances.xvg')
+#axs_us[3].plot(domain_distances_autocorr[0], domain_distances_autocorr[1])
+#axs_us[3].set_title('PDZ3-TrpCage (Closed start) COM distances autocorrelation')
+#axs_us[3].set_ylabel('G(t)')
+#axs_us[3].set_xlabel('t / ps')
 #axs_us[3].set(ylim=(-1,1))
-
 """
-
 """
 rmsf_pdztrp = get_simple_dataset('/home/sulcjo/IOCB/md/pdz_gggggg_trp_150ns/xmgrace/rmsf_all_atom.xvg')
 rmsf_pdz = get_simple_dataset('/home/sulcjo/IOCB/md/pdz/xmgrace/rmsf_all_atom.xvg')
@@ -636,6 +701,107 @@ axs_rmsf[1].plot(rmsf_pdz[0], delta_rmsf, color='red', label='delta')
 axs_rmsf[0].legend()
 axs_rmsf[1].legend()
 """
+
+"""
+fig_us, axs_us = plt.subplots(nrows=3, ncols=1)
+setLineColor = 'blue'
+setFontSizeLarge = 18
+setFontSizeMedium = 14
+domain_distance = get_simple_dataset('/run/media/sulcjo/sulcjo-data/IOCB/md/trp_gggggg_pdz_closed_amber/xmgrace/distance_domains.xvg')
+axs_us[0].plot(domain_distance[0], domain_distance[1],color=setLineColor, label='Closed start')
+axs_us[0].set_title('TrpCage...PDZ3 no linker COM distances (closed start)', fontsize=setFontSizeLarge)
+axs_us[0].set_title('TrpCage-GGGGGG-PDZ3 closed start AMBER COM distances', fontsize=setFontSizeLarge)
+axs_us[0].set_ylabel('d / nm', fontsize=setFontSizeMedium)
+axs_us[0].legend()
+
+domain_contacts = get_simple_dataset('/run/media/sulcjo/sulcjo-data/IOCB/md/trp_gggggg_pdz_closed_amber/xmgrace/domain_contacts.xvg')
+axs_us[1].plot(domain_contacts[0], domain_contacts[1],color=setLineColor)
+axs_us[1].set_title('TrpCage-GGGGGG-PDZ3 closed start AMBER COM contacts', fontsize=setFontSizeLarge)
+axs_us[1].set_ylabel('count', fontsize=setFontSizeMedium)
+
+domain_histograms = get_simple_dataset('/run/media/sulcjo/sulcjo-data/IOCB/md/trp_gggggg_pdz_closed_amber/xmgrace/domains_distance_histo.xvg')
+axs_us[2].plot(domain_histograms[0], domain_histograms[1],color=setLineColor)
+axs_us[2].set_title('TrpCage-GGGGGG-PDZ3 closed start AMBER COM distances frequency', fontsize=setFontSizeLarge)
+axs_us[2].set_ylabel('Count', fontsize=setFontSizeMedium)
+"""
+
+"""
+us_contacts = get_simple_dataset('/run/media/sulcjo/sulcjo-data/IOCB/umbrella/linker_amber/wham_results/contacts_pulling.xvg')
+pmf_curve = get_umbrella_profile('/run/media/sulcjo/sulcjo-data/IOCB/umbrella/linker_amber/wham_results/profile_errors.xvg')
+pmf_histograms = get_umbrella_histogram('/run/media/sulcjo/sulcjo-data/IOCB/umbrella/linker_amber/wham_results/histo.xvg')
+fig_us, axs_us = plt.subplots(nrows=3, ncols=1, gridspec_kw={'height_ratios' : [3,1,1]})
+setLineColor = 'blue'
+setFontSizeLarge = 18
+setFontSizeMedium = 14
+
+axs_us[0].errorbar(pmf_curve[0], pmf_curve[1], yerr=pmf_curve[2], capsize=5, ecolor='black',color=setLineColor)
+axs_us[0].set_title('PMF Curve for TrpCage-GGGGGG-PDZ3 AMBER pulling', fontsize=setFontSizeLarge)
+axs_us[0].set_ylabel('PMF / kJ/mol', fontsize=setFontSizeMedium)
+
+for run in pmf_histograms[1]:
+    axs_us[1].plot(pmf_histograms[0], run, color=setLineColor)
+axs_us[1].set_title('Histograms', fontsize=setFontSizeLarge)
+axs_us[1].set_ylabel('Counts', fontsize=setFontSizeMedium)
+axs_us[2].set_xlabel('COM-COM distance / nm', fontsize=setFontSizeMedium)
+
+axs_us[2].plot(us_contacts[0], us_contacts[1], color=setLineColor)
+axs_us[2].set_title('< 0.6 nm contacts', fontsize=setFontSizeLarge)
+axs_us[2].set_xlabel('Time / ns', fontsize=setFontSizeMedium)
+axs_us[2].set_ylabel('Count', fontsize=setFontSizeMedium)
+"""
+
+"""
+fig, ax = plt.subplots(ncols=2)
+pca_linker = get_simple_dataset('/run/media/sulcjo/sulcjo-data/IOCB/md/umbrella/linker/pca_pdz/2d_proj.xvg')
+pca_nolinker = get_simple_dataset('/run/media/sulcjo/sulcjo-data/IOCB/md/umbrella/nolinker/pca_pdz3/2d_proj.xvg')
+pca_linker_amber = get_simple_dataset('/run/media/sulcjo/sulcjo-data/IOCB/md/umbrella/linker_amber/pca/2d_proj.xvg')
+pca_closed_simulations = get_simple_dataset('/run/media/sulcjo/sulcjo-data/IOCB/md/trp_gggggg_pdz_closed_400ns/pca_pdz3/2d_proj.xvg')
+pca_closed_simulation_amber = get_simple_dataset('/run/media/sulcjo/sulcjo-data/IOCB/md/trp_gggggg_pdz_closed_amber/pca_pdz3/2d_proj.xvg')
+
+ax[0].scatter(pca_linker[0], pca_linker[1], label = 'Harm. pot. with linker CHARMM')
+ax[0].scatter(pca_nolinker[0], pca_nolinker[1], label = 'Harm. pot. no linker')
+ax[0].scatter(pca_linker_amber[0], pca_linker_amber[1], label = 'Harm. pot. with linker AMBER')
+ax[1].scatter(pca_closed_simulations[0], pca_closed_simulations[1], label = 'STD MD with linker CHARMM')
+ax[1].scatter(pca_closed_simulation_amber[0], pca_closed_simulation_amber[1], label = 'STD MD with linker AMBER')
+ax[0].legend()
+ax[1].legend()
+"""
+
+fig, axs = plt.subplots()
+base_path = '/run/timeshift/backup/IOCB/md/'
+open_i_rg = get_simple_dataset(f'{base_path}trp_gggggg_pdz_open_i/xmgrace/gyrate.xvg')
+open_i_sasa = get_simple_dataset(f'{base_path}trp_gggggg_pdz_open_i/xmgrace/sasa.xvg')
+open_ii_rg = get_simple_dataset(f'{base_path}trp_gggggg_pdz_open_ii/trp_pdz_open_ii/xmgrace/gyrate.xvg')
+open_ii_sasa = get_simple_dataset(f'{base_path}trp_gggggg_pdz_open_ii/trp_pdz_open_ii/xmgrace/sasa.xvg')
+open_amber_rg = get_simple_dataset(f'{base_path}trp_pdz_open_amber/xmgrace/gyrate.xvg')
+open_amber_sasa = get_simple_dataset(f'{base_path}trp_pdz_open_amber/xmgrace/sasa.xvg')
+
+closed_i_rg = get_simple_dataset(f'{base_path}trp_gggggg_pdz_closed_i/xmgrace/gyrate.xvg')
+closed_i_sasa = get_simple_dataset(f'{base_path}trp_gggggg_pdz_closed_i/xmgrace/sasa.xvg')
+closed_amber_rg = get_simple_dataset(f'{base_path}trp_gggggg_pdz_closed_amber/xmgrace/gyrate.xvg')
+closed_amber_sasa = get_simple_dataset(f'{base_path}trp_gggggg_pdz_closed_amber/xmgrace/sasa.xvg')
+
+whole_dataset = [ [open_i_rg[1], open_i_sasa[1]], [open_ii_rg[1], open_ii_sasa[1]],
+                 [open_amber_rg[1], open_amber_sasa[1]], [closed_i_rg[1], closed_i_sasa[1]],
+                 [closed_amber_rg[1], closed_amber_sasa[1]] ]
+dataset_labels = ['Open I', 'Open II', 'Open AMBER', 'Closed I', 'Closed II', 'Closed AMBER']
+dataset_colors = ['tab:blue', 'green', 'tab:purple', 'tab:orange', 'tab:red', 'gold']
+
+for dataset, label, color in zip(whole_dataset, dataset_labels, dataset_colors):
+    axs.scatter(dataset[0], dataset[1], color=color, s=10, zorder=1)
+    axs.scatter(0,0, color=color, s=60, label=label)
+    axs.scatter(dataset[0][0], dataset[1][0], marker='^', s=500, color=color, edgecolors='black', zorder=2, linewidth=5)
+    axs.scatter(dataset[0][-1], dataset[1][-1], marker='D', s=500, color=color, edgecolors='black', zorder=2, linewidth=5)
+axs.set_xlabel('R(g) / nm')
+axs.set_ylabel('SASA / nm^2')
+axs.scatter(0,0, marker='^', color='white', edgecolors='black', linewidth=8 ,label='1st frame', s=100)
+axs.scatter(0,0, marker='D', color='white', edgecolors='black', linewidth=5 ,label='Last frame', s=100)
+axs.set(xlim=(1.2, 2.8), ylim=(63, 93))
+axs.legend()
+
+
+
+
 
 
 
