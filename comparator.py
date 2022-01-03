@@ -18,8 +18,14 @@ class Comparator:
     # It has access to all the datasets present in the models
     def __init__(self, proteinModels = None):
         plt.rcParams.update({'font.sans-serif': 'Verdana'})
-        self.proteinModels = proteinModels
+        models = proteinModels
+        if isinstance(proteinModels,list):
+            self.proteinModels = models
+        else:
+            self.proteinModels = [models]
+
         self.number_models = len(self.proteinModels)
+
         self.setMaxColumns = 5
         self.setFontSizeLarge = 24
         self.setLineWidth = 0.8
@@ -27,7 +33,10 @@ class Comparator:
         self.setFigSize = (20, 15)
         self.setFontSizeMedium = 16
         self.setFontSizeSmall = 14
-        print(f'COMPARATOR LOADED MODELS {[model.annotation for model in proteinModels]}')
+
+
+        print(f'COMPARATOR LOADED MODELS {[model.annotation for model in self.proteinModels]}')
+
         plt.rc('xtick', labelsize=self.setFontSizeMedium)
         plt.rc('ytick', labelsize=self.setFontSizeMedium)
 
@@ -558,12 +567,13 @@ class Comparator:
             excel_dataframe = excel_dataframe.loc[:, (excel_dataframe != 0).any(axis=0)]
             excel_dataframe = excel_dataframe.T
 
+
             if dataset == 'total_IEM':
-                excel_dataframe.to_excel(f'/home/sulcjo/IOCB/md/grinn/all_{self.proteinModels[index].annotation}_total.xlsx')
+                excel_dataframe.to_excel(f'/run/media/sulcjo/sulcjo-data/IOCB/md/HIV/HmII_annealing/md/md_310k_grinn_docker_2/python/all_{self.proteinModels[index].annotation}_total.xlsx')
             elif dataset == 'elec_IEM':
-                excel_dataframe.to_excel(f'/home/sulcjo/IOCB/md/grinn/all_{self.proteinModels[index].annotation}_elec.xlsx')
+                excel_dataframe.to_excel(f'/run/media/sulcjo/sulcjo-data/IOCB/md/HIV/HmII_annealing/md/md_310k_grinn_docker_2/python/all_{self.proteinModels[index].annotation}_elec.xlsx')
             elif dataset == 'vdw_IEM':
-                excel_dataframe.to_excel(f'/home/sulcjo/IOCB/md/grinn/all_{self.proteinModels[index].annotation}_vdw.xlsx')
+                excel_dataframe.to_excel(f'/run/media/sulcjo/sulcjo-data/IOCB/md/HIV/HmII_annealing/md/md_310k_grinn_docker_2/python/all_{self.proteinModels[index].annotation}_vdw.xlsx')
 
 
 
@@ -749,7 +759,7 @@ class Comparator:
             ax3.axvline(x=ligand_range[1], color='k', linewidth=2)
 
             if write_best_pairs:
-                best_pairs = get_best_pairs(pairs_df, pairs=7).T
+                best_pairs = get_best_pairs(pairs_df, pairs=14).T
                 best_pairs_text = ''
                 for row in best_pairs:
                     best_pairs_text += f'{row} {best_pairs[row]["mean"].round(decimals=1)} kcal/mol \n'
@@ -761,11 +771,11 @@ class Comparator:
 
             plt.suptitle(title, size=self.setFontSizeLarge)
             if dataset == 'total_IEM':
-                plt.savefig(f'/home/sulcjo/IOCB/md/grinn/all_{self.proteinModels[index].annotation}_totalIEMsquare.png')
+                plt.savefig(f'/run/media/sulcjo/sulcjo-data/IOCB/md/HIV/HmII_annealing/md/md_310k_grinn_docker_2/python/all_{self.proteinModels[index].annotation}_totalIEMsquare.png')
             elif dataset == 'elec_IEM':
-                plt.savefig(f'/home/sulcjo/IOCB/md/grinn/all_{self.proteinModels[index].annotation}_elecIEMsquare.xlsx')
+                plt.savefig(f'/run/media/sulcjo/sulcjo-data/IOCB/md/HIV/HmII_annealing/md/md_310k_grinn_docker_2/python/all_{self.proteinModels[index].annotation}_elecIEMsquare.xlsx')
             elif dataset == 'vdw_IEM':
-                plt.savefig(f'/home/sulcjo/IOCB/md/grinn/all_{self.proteinModels[index].annotation}_vdwIEMsquare.xlsx')
+                plt.savefig(f'/run/media/sulcjo/sulcjo-data/IOCB/md/HIV/HmII_annealing/md/md_310k_grinn_docker_2/python/all_{self.proteinModels[index].annotation}_vdwIEMsquare.xlsx')
 
 
 

@@ -273,6 +273,7 @@ compareMLAWT.plot_IEM(modelIndexes=[0,1], write_best_pairs=False, mark_resis=mar
 compareMLAWT.show()
 """
 
+"""
 base_path = '/home/sulcjo/IOCB/md'
 fusion_domains = proteinModel.quick_load(
     {
@@ -301,3 +302,12 @@ fusion_compare.plot_IEM(modelIndexes=[0,1,2], write_best_pairs=True, dataset='to
 fusion_compare.compare_IEM(modelIndexes=[0,1])
 
 fusion_compare.show()
+"""
+from proteinModel import proteinModel
+hiv = proteinModel(split=[(1,94),(95,355)])
+hiv.get_dataset('//run/media/sulcjo/sulcjo-data/IOCB/md/HIV/HmII_annealing/md/grinn_1_noter.pdb','sequence')
+#hiv.DSSP_assign()
+hiv.get_GRINN_datasets('/run/media/sulcjo/sulcjo-data/IOCB/md/HIV/HmII_annealing/md/md_310k_grinn_docker_2/')
+hiv_compare = Comparator(proteinModels=hiv)
+hiv_compare.plot_IEM(sec_str=False)
+hiv_compare.show()

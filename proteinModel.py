@@ -430,12 +430,14 @@ class proteinModel:
                 if 'ATOM' in split_line[0] and remember_last_resindex != split_line[5]:
                     residues.append(split_line[4] + split_line[3] + split_line[5])
                     remember_last_resindex = split_line[5]
+
+
             pdb_file.seek(0)
             self.pdb_file = pdb_file.read()
 
         self.seq_3_chains = residues
         self.seq_3 = [residue[1:] for residue in residues]
-
+        print(residues)
         modified_sequence = three_to_one(self.seq_3_chains)
         self.seq_1_chains = modified_sequence
         self.seq_1 = [residue[1:] for residue in modified_sequence]
