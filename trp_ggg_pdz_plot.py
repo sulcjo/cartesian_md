@@ -840,9 +840,13 @@ for rg_pdz, sasa_pdz, run, rg_pdzltrp, sasa_pdzltrp, rg_trplpdz, sasa_trplpdz in
     areas_trplpdz.append(over_threshold_trplpdz.sum() * (xedges_trplpdz[1] - xedges_trplpdz[0]) * (
                 yedges_trplpdz[1] - yedges_trplpdz[0]))
 
-print(f'Areas PDZ3 {areas_pdz} , AVG {np.mean(areas_pdz)} +- STD{np.std(areas_pdz)} (nm^3)\n')
-print(f'Areas PDZ3-l-TrpCage {areas_pdzltrp} , {np.mean(areas_pdzltrp)} +- STD{np.std(areas_pdzltrp)} (nm^3)\n')
-print(f'Areas TrpCage-l-PDZ3 {areas_trplpdz} , {np.mean(areas_trplpdz)} +- STD{np.std(areas_trplpdz)} (nm^3)\n')
+areas_pdz = list(map(lambda x: np.round(x, decimals=2), areas_pdz))
+areas_pdzltrp = list(map(lambda x: np.round(x, decimals=2), areas_pdzltrp))
+areas_trplpdz = list(map(lambda x: np.round(x, decimals=2), areas_trplpdz))
+
+print(f'Areas PDZ3 {areas_pdz} , AVG {np.round(np.mean(areas_pdz), decimals=3)} +- STD{np.round(np.std(areas_pdz), decimals=3)} (nm^3)\n')
+print(f'Areas PDZ3-l-TrpCage {areas_pdzltrp} , {np.round(np.mean(areas_pdzltrp), decimals=3)} +- STD{np.round(np.std(areas_pdzltrp), decimals=3)} (nm^3)\n')
+print(f'Areas TrpCage-l-PDZ3 {areas_trplpdz} , {np.round(np.mean(areas_trplpdz), decimals=3)} +- STD{np.round(np.std(areas_trplpdz), decimals=3)} (nm^3)\n')
 
 
 

@@ -567,14 +567,14 @@ class Comparator:
             excel_dataframe = excel_dataframe.loc[:, (excel_dataframe != 0).any(axis=0)]
             excel_dataframe = excel_dataframe.T
 
-
+            """
             if dataset == 'total_IEM':
                 excel_dataframe.to_excel(f'/run/media/sulcjo/sulcjo-data/IOCB/md/HIV/HmII_annealing/md/md_310k_grinn_docker_2/python/all_{self.proteinModels[index].annotation}_total.xlsx')
             elif dataset == 'elec_IEM':
                 excel_dataframe.to_excel(f'/run/media/sulcjo/sulcjo-data/IOCB/md/HIV/HmII_annealing/md/md_310k_grinn_docker_2/python/all_{self.proteinModels[index].annotation}_elec.xlsx')
             elif dataset == 'vdw_IEM':
                 excel_dataframe.to_excel(f'/run/media/sulcjo/sulcjo-data/IOCB/md/HIV/HmII_annealing/md/md_310k_grinn_docker_2/python/all_{self.proteinModels[index].annotation}_vdw.xlsx')
-
+            """
 
 
 
@@ -770,13 +770,14 @@ class Comparator:
 
 
             plt.suptitle(title, size=self.setFontSizeLarge)
+            """
             if dataset == 'total_IEM':
                 plt.savefig(f'/run/media/sulcjo/sulcjo-data/IOCB/md/HIV/HmII_annealing/md/md_310k_grinn_docker_2/python/all_{self.proteinModels[index].annotation}_totalIEMsquare.png')
             elif dataset == 'elec_IEM':
                 plt.savefig(f'/run/media/sulcjo/sulcjo-data/IOCB/md/HIV/HmII_annealing/md/md_310k_grinn_docker_2/python/all_{self.proteinModels[index].annotation}_elecIEMsquare.xlsx')
             elif dataset == 'vdw_IEM':
                 plt.savefig(f'/run/media/sulcjo/sulcjo-data/IOCB/md/HIV/HmII_annealing/md/md_310k_grinn_docker_2/python/all_{self.proteinModels[index].annotation}_vdwIEMsquare.xlsx')
-
+            """
 
 
     def show(self):
