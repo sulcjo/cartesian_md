@@ -1,22 +1,10 @@
-import pandas as pd
-import numpy as np
-import matplotlib.pyplot as plt
 import sys, argparse
 import re
 import multiprocessing as mp
 from alive_progress import alive_bar
-import matplotlib.pyplot as plt
-from mpl_toolkits.mplot3d import Axes3D
-import math
+import json
+import sys
 
-
-# Depends on PyQt5, PyOpenGL
-from pyqtgraph import PlotWidget, plot
-import pyqtgraph as pg
-import sys, os
-import pyqtgraph as pg
-from PyQt5.QtGui import *
-from PyQt5.QtWidgets import *
 
 """
 Add an option to save calculated vectors (and load them back) into a pickle-file
@@ -39,16 +27,6 @@ part of the trajectory.
 Consider omitting Hydrogens out of the analysis
 """
 
-def main(argv=sys.argv[1:]):
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--f", type=str, help='Input traj -ox filepath', required=True)
-    parser.add_argument("--s", type=str, help='Input traj -com -ox filepath', required=True)
-    parser.add_argument("--N", type=int, help='Number of CPU cores to use for assigning data', required=False, default=4)
-    global args
-    args = parser.parse_args(argv)
-
-if __name__ == '__main__':
-    main()
 
 def assign_to_dict(data, x_cart, y_cart, z_cart):
     times = []
@@ -94,7 +72,7 @@ def assign_to_dict(data, x_cart, y_cart, z_cart):
 
     return(x_cart, y_cart, z_cart, times)
 
-def parse_cartesian():
+def parse_cartesian(path):
     """
     parse_cartesian() parses a dataset of this type:
         # comments for .xvg reader
@@ -119,14 +97,14 @@ def parse_cartesian():
 
 
 
-    path = args.f
+
 
 
     try:
         with open(path) as file:
             lines = file.readlines()
     except FileNotFoundError:
-        print(f'{args.f} does not exist')
+        print(f'{path} does not exist')
         exit()
 
     # Read only lines not containing '#'
@@ -172,14 +150,14 @@ def parse_cartesian():
 
 
     # Init multiprocessing.Pool()
-    pool = mp.Pool(args.N)
+    pool = mp.Pool(mp.cpu_count())
     # Assign coordinates to a dictionary
     x_cart, y_cart, z_cart, times = pool.apply(assign_to_dict, args=(data, x_cart, y_cart, z_cart))
     pool.close()
 
     return(x_cart, y_cart, z_cart, times)
 
-def parse_com():
+def parse_com(path):
     """
     parse_com() parses a dataset of this type:
         # comments for .xvg reader
@@ -197,12 +175,11 @@ def parse_com():
     :return: assigned dictionaries of COM coordinates x_cart, y_cart, z_cart
     """
 
-    path = args.s
     try:
         with open(path) as file:
             lines = file.readlines()
     except FileNotFoundError:
-        print(f'{args.s} does not exist')
+        print(f'{path} does not exist')
         exit()
 
     # Read only lines not containing '#'
@@ -243,9 +220,9 @@ def recalculate_vector(x, y, z, x_com, y_com, z_com):
     with alive_bar(len(x_keys)) as bar:
         print('Recalculating vectors')
         for x_key, y_key, z_key in zip(x_keys, y_keys, z_keys):
-            x_in_time = x_cart[x_key]
-            y_in_time = y_cart[y_key]
-            z_in_time = z_cart[z_key]
+            x_in_time = x[x_key]
+            y_in_time = y[y_key]
+            z_in_time = z[z_key]
 
             bar()
             new_vectors[x_key[:-2]] = []
@@ -273,18 +250,39 @@ def get_vectors(x_cart, y_cart, z_cart, x_com, y_com, z_com):
     """
 
 
-    pool = mp.Pool(args.N)
+    pool = mp.Pool(mp.cpu_count())
     # Assign coordinates to a dictionary
     vectors = pool.apply(recalculate_vector, args=(x_cart, y_cart, z_cart, x_com, y_com, z_com))
     pool.close()
     return(vectors)
 
 
-x_cart, y_cart, z_cart, times = parse_cartesian()
-x_com, y_com, z_com = parse_com()
-vectors = get_vectors(x_cart, y_cart, z_cart, x_com, y_com, z_com)
+def main(argv=sys.argv[1:]):
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--f", type=str, help='Input traj -ox filepath', required=True)
+    parser.add_argument("--s", type=str, help='Input traj -com -ox filepath', required=True)
+    parser.add_argument("--o", type=str, help='Output.json (json)', required=True, default='cartesian_outfile')
+    global args
+    args = parser.parse_args(argv)
+    x_cart, y_cart, z_cart, times = parse_cartesian(args.f)
+    x_com, y_com, z_com = parse_com(args.s)
+    vectors = get_vectors(x_cart, y_cart, z_cart, x_com, y_com, z_com)
+
+    with open(args.o,'w') as fp:
+        print(f'Outputting vector dictionary to {args.o}')
+        json.dump(vectors, fp)
 
 
+if __name__ == '__main__':
+    main()
+
+
+
+
+
+
+"""
+exit()
 # Plotting part, add to a function later
 fig = plt.figure()
 axs = []
@@ -295,25 +293,6 @@ max_cols = 7
 plots_total=10
 ax_index = 1
 axs = []
-
-
-# Create main application instance
-app = pg.mkQApp()
-
-# Create the view
-view = pg.PlotWidget()
-view.resize(800, 600)
-view.setWindowTitle('Scatter plot using pyqtgraph with PyQT5')
-view.setAspectLocked(True)
-view.show()
-
-# Create the scatter plot, add it to view
-scatter = pg.ScatterPlotItem(pen=pg.mkPen(width=5, color='r'), symbol='o', size=1)
-view.addItem(scatter)
-
-x = [i[0] for i in vectors['atom 2']]
-y = [i[1] for i in vectors['atom 2']]
-z = [i[2] for i in vectors['atom 2']]
 
 
 
@@ -339,7 +318,7 @@ for ind, vector_key in enumerate(vectors):
 
 #plt.show()
 
-
+"""
 
 
 
