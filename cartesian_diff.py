@@ -7,6 +7,7 @@ import scipy.spatial as ss
 import pickle
 import matplotlib.pyplot as plt
 import re
+import multiprocessing as mp
 
 # This script creates pickle files with histograms and a csv of spatial analysis of vectors
 def analyse_space(vector, vectin=1):
@@ -65,7 +66,7 @@ def color_structure(space_df):
 
         # traverse in the string
         for ele in s:
-            str1 += f'{ele}\t'
+            str1 += f'{ele} '
 
             # return string
         return str1
@@ -86,27 +87,44 @@ def color_structure(space_df):
     with alive_bar(len(lines)) as bar:
         print('Writing .pdb')
         for line in lines:
+            """
+            if 'ENDMDL' in line:
+                new_line = line
+                atom_ind = 0
+
+            elif 'ATOM' in line:
+                # All the columns until temp-factor
+                split = line.split()
+                new_line = split[0] + '      ' + split[1] + '  ' + split[2] + '   ' + split[3] + '    ' + split[4] + '      ' + split[5] + '  ' + split[6] + '  ' + split[7] + '  ' + split[8] + '  '
+                # Temp factor / delta of explored volume
+                factor = str(abs(round(delta.iloc[atom_ind]*100,2)))
+
+                new_line += factor
+                # Atom type (C, N, O...)
+                new_line += '           ' + split[9]
+                atom_ind += 1
+            else:
+                new_line = line
+            """
             if 'ENDMDL' in line:
                 new_line = line
                 atom_ind = 0
             elif 'ATOM' in line:
-                # All the columns until temp-factor
-                new_line = listToString(line.split()[0:9])
-                # Temp factor / delta of explored volume
-                factor = str(abs(round(delta.iloc[atom_ind]*100,2)))
-
-                new_line += f'\t{factor}'
-                # Atom type (C, N, O...)
-                new_line += f'\t{line.split()[-1]}\n'
+                factor = str(abs(round(delta.iloc[atom_ind] * 100, 2)))
+                # This is an ugly hack, replace later
+                new_line = line.replace(' 0.00 ', factor)
                 atom_ind += 1
             else:
                 new_line = line
 
+            new_line = new_line.replace('\n','')
             new_pdb += new_line
+            new_pdb += '\n'
+
             bar()
 
 
-    with open(f'{args.pdbs}_colored','w') as file:
+    with open(f'{args.pdbs}_colored.pdb','w') as file:
         file.write(new_pdb)
 
 
@@ -162,6 +180,10 @@ def main(argv=sys.argv[1:]):
             pickle.dump(histograms2, file)
 
     if args.pdbs:
+        #pool = mp.Pool(mp.cpu_count())
+        #pool.map(color_structure, output_df)
+        #pool.close()
+        #pool.join()
         color_structure(output_df)
 
     if args.plot:
