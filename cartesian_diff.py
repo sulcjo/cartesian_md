@@ -24,6 +24,7 @@ def analyse_space(vector, vectin=1):
 
 
 
+
             hist_atom, edges = np.histogramdd((x,y,z))
             histograms[atom_key] = hist_atom
 
@@ -31,8 +32,14 @@ def analyse_space(vector, vectin=1):
             arr = np.array([x,y,z])
             arr = np.transpose(arr)
 
-            hull = ss.ConvexHull(arr)
-            #print(f'Vol={hull.volume} nm^3')
+
+            try:
+                hull = ss.ConvexHull(arr)
+            except ss.qhull.QhullError:
+                print('QHullError, check your vectors! (are you sure you are not subtracting two identical ones?')
+                exit()
+
+            print(f'Vol={hull.volume} nm^3')
             #print(f'Simplices={hull.simplices}')
             #print(f'Vertices={hull.vertices}')
 
@@ -51,7 +58,7 @@ def analyse_space(vector, vectin=1):
 
     return(output_df, histograms)
 
-def color_structure(space_df):
+def color_structure(space_df, delta=False):
     # This assigns the value of deltaVolumeExplored (obtained by |VE(2)-VE(1)| where VE is volume explored)
     # to a pdb file, where it's put into the last column (usually occupied by temperature factors) to be
     # visualized at your leisure (PyMol, vmd, Chimera...)
@@ -77,6 +84,7 @@ def color_structure(space_df):
     except FileNotFoundError:
         print(f"{args.pdbs} doesn't exist, will exit")
         exit()
+
 
     delta = space_df['Volume 2 / nm^3'] - space_df['Volume 1 / nm^3']
 
@@ -124,7 +132,7 @@ def color_structure(space_df):
             bar()
 
 
-    with open(f'{args.pdbs}_colored.pdb','w') as file:
+    with open(f'{args.pdbs}_diff.pdb','w') as file:
         file.write(new_pdb)
 
 
@@ -167,7 +175,10 @@ def main(argv=sys.argv[1:]):
     output_df1, histograms1 = analyse_space(vectors1, vectin=1)
 
     if args.s:
+
+
         output_df2, histograms2 = analyse_space(vectors2, vectin=2)
+
         output_df = output_df1.join(output_df2)
     else:
         output_df = output_df1
