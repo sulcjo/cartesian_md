@@ -87,7 +87,6 @@ def color_structure(space_df, delta=False):
 
 
     delta = space_df['Volume 2 / nm^3'] - space_df['Volume 1 / nm^3']
-
     new_pdb = ''
     atom_ind = 0
 
@@ -118,7 +117,9 @@ def color_structure(space_df, delta=False):
                 new_line = line
                 atom_ind = 0
             elif 'ATOM' in line:
-                factor = str(abs(round(delta.iloc[atom_ind] * 100, 2)))
+
+                factor = delta.iloc[atom_ind] * 100
+                factor = "{:10.4f}".format(factor)
                 # This is an ugly hack, replace later
                 new_line = line.replace(' 0.00 ', factor)
                 atom_ind += 1

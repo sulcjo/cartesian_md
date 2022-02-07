@@ -227,6 +227,9 @@ def recalculate_vector(x, y, z, x_com, y_com, z_com):
             bar()
             new_vectors[x_key[:-2]] = []
 
+            """
+            Rewrite in NumPy, iterating is slow and stupid
+            """
             for x_it, y_it, z_it, comx_it, comy_it, comz_it in zip(x_in_time, y_in_time, z_in_time, com_x, com_y, com_z):
                 #print('COM: ',comx_it, comy_it, comz_it, f' @ {time}', 'COORD', x_it, y_it, z_it)
 
