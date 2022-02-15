@@ -3,15 +3,13 @@ from Bio import SeqIO
 import numpy
 from Bio.SeqUtils import seq1
 
-pdb_code = '3AI5'
-pdb_filename = "/run/media/sulcjo/sulcjo-data/IOCB/alphafold2_out/jv_send/3AI5.pdb"
-pdb_out_filename = "/run/media/sulcjo/sulcjo-data/IOCB/alphafold2_out/jv_send/3AI5_Pyaligned.pdb"
 
-structure = Bio.PDB.PDBParser().get_structure(pdb_code, pdb_filename)
+structure_AF2 = Bio.PDB.PDBParser().get_structure('1AMM', '/run/media/sulcjo/sulcjo-data/IOCB/alphafold/pdb_reviewers_paper/AF2/1AMM_1.pdb')
+structure_ref = Bio.PDB.PDBParser().get_structure('ref', '/run/media/sulcjo/sulcjo-data/IOCB/alphafold/pdb_reviewers_paper/AF2/1amm.pdb1')
 
-ref_model = structure[0]
-alt_model = structure[1]
 
+ref_model = structure_ref[0]
+alt_model = structure_AF2[0]
 
 
 
@@ -19,7 +17,8 @@ alt_model = structure[1]
 
 
 
-"""
+
+
 def DSSP_assign(pdb_path):
     p = PDBParser()
     # print(pdb_path)
@@ -57,4 +56,3 @@ ss_model = DSSP_assign(pdb_path)
 ss_ref = DSSP_assign(solved_structure_path)
 color_ss = get_sec_str_colors(ss_model)
 color_ss_ref = get_sec_str_colors(ss_ref)
-"""

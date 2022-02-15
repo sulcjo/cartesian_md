@@ -4,9 +4,9 @@ from Bio.PDB import PDBParser, Superimposer
 from Bio.PDB.DSSP import DSSP
 import Bio
 
-handle = '3AI5'
-ref_path = '/run/media/sulcjo/sulcjo-data/IOCB/alphafold/alphafold2_out/python/3AI5_.pdb'
-model_path = '/run/media/sulcjo/sulcjo-data/IOCB/alphafold/alphafold2_out/python/3AI5_af.pdb'
+handle = '1AMM'
+ref_path = '/run/media/sulcjo/sulcjo-data/IOCB/alphafold/pdb_reviewers_paper/AF2/1amm.pdb1'
+model_path = '/run/media/sulcjo/sulcjo-data/IOCB/alphafold/pdb_reviewers_paper/AF2/1AMM_1.pdb'
 
 ### This will get the AA sequence from PDB, but only from the first structure. If there's more, it will simply ignore any additional structures
 ### which is handled by the condition that subsequent residue index can't be lower (i.e. 1) than the last
@@ -74,4 +74,4 @@ super_imposer = Superimposer()
 super_imposer.set_atoms(ref_atoms, sample_atoms)
 super_imposer.apply(sample_model.get_atoms())
 total_model_rms = (super_imposer.rms)
-print(f'{handle} Ca rmsd to ref structure is {total_model_rms} with rottrans {super_imposer.rottran}')
+print(f'{handle} Ca rmsd to ref structure is {total_model_rms} with rottrans {super_imposer.rotran}')

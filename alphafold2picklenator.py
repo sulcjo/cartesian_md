@@ -21,7 +21,7 @@ solved_structure_path = '/home/sulcjo/Desktop/IOCB/pdz_trpc/NMR_structures/trppd
 plt.rcParams['font.size'] = 12
 
 
-
+AF
 
 """
 Prediction confidence plots
