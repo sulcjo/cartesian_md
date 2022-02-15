@@ -114,3 +114,8 @@ Trajectory alignment complete, check both
 in your favorite visualization software.
 ########################
 "
+
+echo 0 | gmx traj -f ${traj1}_ssap_traj.pdb -s ${traj1}_ssap_traj.pdb -ox ${traj1}_coord.xvg -fp
+echo 0 | gmx traj -f ${traj1}_ssap_traj.pdb -s ${traj1}_ssap_traj.pdb -ox ${traj1}_coord.xvg -com -fp
+echo 0 | gmx traj -f ${traj2}_ssap_traj.pdb -s ${traj2}_ssap_traj.pdb -ox ${traj2}_coord.xvg -fp
+echo 0 | gmx traj -f ${traj2}_ssap_traj.pdb -s ${traj2}_ssap_traj.pdb -ox ${traj2}_coord.xvg -com -fp

@@ -136,12 +136,6 @@ def color_structure(space_df, delta=False):
     with open(f'{args.pdbs}_diff.pdb','w') as file:
         file.write(new_pdb)
 
-
-
-
-
-
-
 def main(argv=sys.argv[1:]):
 
     parser = argparse.ArgumentParser()
@@ -177,26 +171,43 @@ def main(argv=sys.argv[1:]):
 
     if args.s:
 
-
         output_df2, histograms2 = analyse_space(vectors2, vectin=2)
 
         output_df = output_df1.join(output_df2)
+        tot_explored_volume_1 = output_df['Volume 1 / nm^3'].sum()
+        tot_explored_volume_2 = output_df['Volume 2 / nm^3'].sum()
+
+
+
+
+
+        delta = output_df['Volume 2 / nm^3'] - output_df['Volume 1 / nm^3']
+        delta = pd.DataFrame(delta, columns=['Vol2-Vol1'])
+        output_df = output_df.join(delta)
+        output_df_rename = output_df.rename(columns={'Vector 1': f'{args.f}', 'Volume 1 / nm^3': f'Volume {args.f} / nm^3',
+                                  'Vol 1/step': f'{args.f} volume/trajectory_step', 'Vector 2': f'{args.s}', 'Volume 2 / nm^3': f'Volume {args.s} / nm^3',
+                                  'Vol 2/step': f'{args.s} volume/trajectory_step', 'Vol2-Vol1':f'V({args.f})-V({args.s})'})
+        output_df_rename.loc[output_df_rename.index[0], f'{args.f} total volume / nm^3'] = tot_explored_volume_1
+        output_df_rename.loc[output_df_rename.index[0], f'{args.f} total volume/atom'] = tot_explored_volume_1/len(list(vectors1.keys()))
+        output_df_rename.loc[output_df_rename.index[0], f'{args.s} total volume / nm^3'] = tot_explored_volume_2
+        output_df_rename.loc[output_df_rename.index[0], f'{args.s} total volume/atom'] = tot_explored_volume_2/len(list(vectors2.keys()))
+
     else:
         output_df = output_df1
+        tot_explored_volume_1 = output_df['Volume 1 / nm^3'].sum()
+        output_df_rename = output_df.rename(columns={'Vector 1': f'{args.f}', 'Volume 1 / nm^3': f'Volume {args.f} / nm^3', 'Vol 1/step':f'{args.f} volume/trajectory_step'})
+        output_df_rename.loc[output_df_rename.index[0], f'{args.f} total volume / nm^3'] = tot_explored_volume_1
+        output_df_rename.loc[output_df_rename.index[0], f'{args.f} total volume/atom'] = tot_explored_volume_1/len(list(vectors1.keys()))
 
-    output_df.to_csv(args.o)
+    output_df_rename.to_csv(args.o)
     with open(args.ohf, 'wb') as file:
         pickle.dump(histograms1, file)
     if args.s:
         with open(args.ohs, 'wb') as file:
             pickle.dump(histograms2, file)
-
     if args.pdbs:
-        #pool = mp.Pool(mp.cpu_count())
-        #pool.map(color_structure, output_df)
-        #pool.close()
-        #pool.join()
         color_structure(output_df)
+
 
     if args.plot:
         #print(output_df['Volume 1 / nm^3'])

@@ -7,24 +7,20 @@ import sys
 
 
 """
-Add an option to save calculated vectors (and load them back) into a pickle-file
-Comparison of two sets of vectors, params --f1 --f2 --s1 --s2
-"""
-
-
-# python cartesian.py --f /run/timeshift/backup/IOCB/MSM/trp_l_pdz_closed/CART/cart.xvg --s /run/timeshift/backup/IOCB/MSM/trp_l_pdz_closed/CART/mol.xvg
-
-"""
 python cartesian.py [--f file containing coordinates of atoms <cart.xvg>] [--s file containing coordinates of molecular COMs <mol.xvg>]
 
-Cartesian requires an output file from gmx traj -f TRAJ.xtc -s TOP.tpr -ox CARTESIAN.xvg (vectors of atoms),
-and also an output from the same command, but with -com flag specified (vectors of COMs, beware - always 
-compare comparable, that is COMs of the same part of the molecule for both systems!). Please make
-sure that your trajectory is free of PBC and is fitted both for rotational as well as translational
+Cartesian requires an output file from gmx traj -f TRAJ.xtc -s TOP.tpr -ox CARTESIAN.xvg (vectors of atoms).
+Optionally, it also requires an output from the same command, but with -com flag specified (vectors of COMs, beware - always 
+compare comparable, that is COMs of the same part of the molecule for both systems!). Alternative to this
+is just suplying a single coord.xvg for each of the trajectories, which were previously aligned using cartesian_prepare.sh.
+In this case, vectors are compared in cartesian space after careful fitting of each frame using SSAP algorithm.
+
+Please make sure that your trajectory is free of PBC and is fitted both for rotational as well as translational
 movement of you molecule of interest. The molecule should also be (usually) exploring the equilibrium
 part of the trajectory.
 
-Consider omitting Hydrogens out of the analysis
+Consider omitting hydrogens out of the analysis, these are either constrained or too flexible and usually don't carry meaningful
+information.
 """
 
 
@@ -196,7 +192,7 @@ def parse_com(path):
 
     return(cart_x, cart_y, cart_z)
 
-def recalculate_vector(x, y, z, x_com, y_com, z_com):
+def recalculate_vector(x, y, z, x_com=False, y_com=False, z_com=False):
     """
     Position vectors are by default in the Cartesian space, with (0 0 0) as the start. This means
     that two structures can't be directly compared. Imagine a multidomain system of a PDZ3-TrpCage and another
@@ -211,35 +207,59 @@ def recalculate_vector(x, y, z, x_com, y_com, z_com):
     y_keys = list(y.keys())
     z_keys = list(z.keys())
 
-    com_x = x_com[list(x_com.keys())[0]]
-    com_y = y_com[list(y_com.keys())[0]]
-    com_z = z_com[list(z_com.keys())[0]]
-
     new_vectors = {}
 
-    with alive_bar(len(x_keys)) as bar:
-        print('Recalculating vectors')
-        for x_key, y_key, z_key in zip(x_keys, y_keys, z_keys):
-            x_in_time = x[x_key]
-            y_in_time = y[y_key]
-            z_in_time = z[z_key]
+    # Trigger if COM recalculation method was chosen
+    if x_com and y_com and z_com:
+        com_x = x_com[list(x_com.keys())[0]]
+        com_y = y_com[list(y_com.keys())[0]]
+        com_z = z_com[list(z_com.keys())[0]]
 
-            bar()
-            new_vectors[x_key[:-2]] = []
+        with alive_bar(len(x_keys)) as bar:
+            print('Recalculating vectors')
+            for x_key, y_key, z_key in zip(x_keys, y_keys, z_keys):
+                x_in_time = x[x_key]
+                y_in_time = y[y_key]
+                z_in_time = z[z_key]
 
-            """
-            Rewrite in NumPy, iterating is slow and stupid
-            """
-            for x_it, y_it, z_it, comx_it, comy_it, comz_it in zip(x_in_time, y_in_time, z_in_time, com_x, com_y, com_z):
-                #print('COM: ',comx_it, comy_it, comz_it, f' @ {time}', 'COORD', x_it, y_it, z_it)
+                bar()
+                new_vectors[x_key[:-2]] = []
 
-                new_x = float(x_it) - float(comx_it)
-                new_y = float(y_it) - float(comy_it)
-                new_z = float(z_it) - float(comz_it)
-                new_vectors[x_key[:-2]].append((new_x,new_y,new_z))
+                """
+                Rewrite in NumPy, iterating is slow and stupid
+                """
+                for x_it, y_it, z_it, comx_it, comy_it, comz_it in zip(x_in_time, y_in_time, z_in_time, com_x, com_y, com_z):
+                    #print('COM: ',comx_it, comy_it, comz_it, f' @ {time}', 'COORD', x_it, y_it, z_it)
+
+                    new_x = float(x_it) - float(comx_it)
+                    new_y = float(y_it) - float(comy_it)
+                    new_z = float(z_it) - float(comz_it)
+                    new_vectors[x_key[:-2]].append((new_x,new_y,new_z))
+    else:
+        with alive_bar(len(x_keys)) as bar:
+            print('Assigning SSAP aligned vectors')
+            for x_key, y_key, z_key in zip(x_keys, y_keys, z_keys):
+                x_in_time = x[x_key]
+                y_in_time = y[y_key]
+                z_in_time = z[z_key]
+
+                bar()
+                new_vectors[x_key[:-2]] = []
+
+                """
+                Rewrite in NumPy, iterating is slow and stupid
+                """
+                for x_it, y_it, z_it in zip(x_in_time, y_in_time, z_in_time):
+                    #print('COM: ',comx_it, comy_it, comz_it, f' @ {time}', 'COORD', x_it, y_it, z_it)
+
+                    new_x = float(x_it)
+                    new_y = float(y_it)
+                    new_z = float(z_it)
+                    new_vectors[x_key[:-2]].append((new_x,new_y,new_z))
+
     return(new_vectors)
 
-def get_vectors(x_cart, y_cart, z_cart, x_com, y_com, z_com):
+def get_vectors(x_cart, y_cart, z_cart, x_com=False, y_com=False, z_com=False):
     """
     Multi-cpu caller for the recalculate_vector function.
 
@@ -251,29 +271,37 @@ def get_vectors(x_cart, y_cart, z_cart, x_com, y_com, z_com):
     :param z_com:
     :return: Vectors starting from COM and ending in the atomic position
     """
-
-
     pool = mp.Pool(mp.cpu_count())
     # Assign coordinates to a dictionary
     vectors = pool.apply(recalculate_vector, args=(x_cart, y_cart, z_cart, x_com, y_com, z_com))
     pool.close()
     return(vectors)
 
-
 def main(argv=sys.argv[1:]):
     parser = argparse.ArgumentParser()
-    parser.add_argument("--f", type=str, help='Input traj -ox filepath', required=True)
-    parser.add_argument("--s", type=str, help='Input traj -com -ox filepath', required=True)
+    parser.add_argument("--f", type=str, help='Input traj -ox filepath (aligned by cartesian_prepare or in conjuction with --s COM file)', required=True)
+    parser.add_argument("--s", type=str, help='OPTIONAL Input traj -com -ox filepath', required=False)
     parser.add_argument("--o", type=str, help='Output.json (json)', required=True, default='cartesian_outfile')
     global args
     args = parser.parse_args(argv)
     x_cart, y_cart, z_cart, times = parse_cartesian(args.f)
-    x_com, y_com, z_com = parse_com(args.s)
-    vectors = get_vectors(x_cart, y_cart, z_cart, x_com, y_com, z_com)
+
+    if args.s:
+        print('######')
+        print('(!!) Recalculating vectors with COM positions as (0,0,0)')
+        print('######')
+        x_com, y_com, z_com = parse_com(args.s)
+        vectors = get_vectors(x_cart, y_cart, z_cart, x_com, y_com, z_com)
+    else:
+        print('######')
+        print('(!!) Using SSAP aligned trajectories instead of COM fitting')
+        print('######')
+        vectors = get_vectors(x_cart, y_cart, z_cart)
 
     with open(args.o,'w') as fp:
         print(f'Outputting vector dictionary to {args.o}')
         json.dump(vectors, fp)
+
 
 
 if __name__ == '__main__':
