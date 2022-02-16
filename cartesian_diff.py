@@ -63,8 +63,13 @@ def color_structure(space_df, delta=False):
     # to a pdb file, where it's put into the last column (usually occupied by temperature factors) to be
     # visualized at your leisure (PyMol, vmd, Chimera...)
     if not args.s:
-        print('Comparing structures requires two of them, please provide one more structure using the --s flag, will quit.')
-        exit()
+        print('(!!) Will print B-factors for a single trajectory only in nm^3')
+        delta = space_df['Volume 1 / nm^3']
+        new_pdb = 'REMARK Volume explored by atom in cartesian space writen in Beta-factors in nm^3'
+    else:
+        print('(!!) Will print B-factors deltas between the two trajectories (s - f) in nm^3')
+        delta = space_df['Volume 2 / nm^3'] - space_df['Volume 1 / nm^3']
+        new_pdb = 'REMARK Difference of volumes explored by atoms in two trajectories in cartesian space writen in Beta-factors in nm^3'
 
     def listToString(s):
 
@@ -86,52 +91,34 @@ def color_structure(space_df, delta=False):
         exit()
 
 
-    delta = space_df['Volume 2 / nm^3'] - space_df['Volume 1 / nm^3']
-    new_pdb = ''
     atom_ind = 0
 
+    new_lines = []
 
-    with alive_bar(len(lines)) as bar:
-        print('Writing .pdb')
-        for line in lines:
-            """
-            if 'ENDMDL' in line:
-                new_line = line
-                atom_ind = 0
+    print('Writing .pdb')
+    for line in lines:
 
-            elif 'ATOM' in line:
-                # All the columns until temp-factor
-                split = line.split()
-                new_line = split[0] + '      ' + split[1] + '  ' + split[2] + '   ' + split[3] + '    ' + split[4] + '      ' + split[5] + '  ' + split[6] + '  ' + split[7] + '  ' + split[8] + '  '
-                # Temp factor / delta of explored volume
-                factor = str(abs(round(delta.iloc[atom_ind]*100,2)))
+        if 'ENDMDL' in line:
+            new_line = line
+            new_line = new_line.replace('\n', '')
+            new_lines.append(new_line + '\n')
+            #atom_ind = 0
+            break
 
-                new_line += factor
-                # Atom type (C, N, O...)
-                new_line += '           ' + split[9]
-                atom_ind += 1
-            else:
-                new_line = line
-            """
-            if 'ENDMDL' in line:
-                new_line = line
-                atom_ind = 0
-            elif 'ATOM' in line:
+        elif 'ATOM' in line:
 
-                factor = delta.iloc[atom_ind] * 100
-                factor = "{:10.4f}".format(factor)
-                # This is an ugly hack, replace later
-                new_line = line.replace(' 0.00 ', factor)
-                atom_ind += 1
-            else:
-                new_line = line
+            factor = delta.iloc[atom_ind]
+            factor = "{:10.4f}".format(factor)
+            # This is an ugly hack, replace later
+            new_line = line.replace(' 0.00 ', factor)
+            atom_ind += 1
+        else:
+            new_line = line
 
-            new_line = new_line.replace('\n','')
-            new_pdb += new_line
-            new_pdb += '\n'
+        new_line = new_line.replace('\n','')
+        new_lines.append(new_line+'\n')
 
-            bar()
-
+    new_pdb = ''.join(new_lines)
 
     with open(f'{args.pdbs}_diff.pdb','w') as file:
         file.write(new_pdb)
@@ -177,10 +164,6 @@ def main(argv=sys.argv[1:]):
         tot_explored_volume_1 = output_df['Volume 1 / nm^3'].sum()
         tot_explored_volume_2 = output_df['Volume 2 / nm^3'].sum()
 
-
-
-
-
         delta = output_df['Volume 2 / nm^3'] - output_df['Volume 1 / nm^3']
         delta = pd.DataFrame(delta, columns=['Vol2-Vol1'])
         output_df = output_df.join(delta)
@@ -210,19 +193,21 @@ def main(argv=sys.argv[1:]):
 
 
     if args.plot:
+
+        fig, ax = plt.subplots()
         #print(output_df['Volume 1 / nm^3'])
         vol_atoms_1 = output_df['Volume 1 / nm^3']
         name_atoms_1 = list(vectors1.keys())
-        name_atoms_2 = list(vectors2.keys())
         name_atoms_1 = [re.findall(r'\d+', i)[0] for i in name_atoms_1]
-        name_atoms_2 = [re.findall(r'\d+', i)[0] for i in name_atoms_2]
         name_atoms_1 = list(map(int, name_atoms_1))
-        name_atoms_2 = list(map(int, name_atoms_2))
-        vol_atoms_2 = output_df['Volume 2 / nm^3']
-
-        fig, ax = plt.subplots()
         ax.plot(name_atoms_1, vol_atoms_1, color='blue', label=args.f)
-        ax.plot(name_atoms_2, vol_atoms_2, color='orange', label=args.s)
+        if args.s:
+            name_atoms_2 = list(vectors2.keys())
+            name_atoms_2 = [re.findall(r'\d+', i)[0] for i in name_atoms_2]
+            name_atoms_2 = list(map(int, name_atoms_2))
+            vol_atoms_2 = output_df['Volume 2 / nm^3']
+            ax.plot(name_atoms_2, vol_atoms_2, color='orange', label=args.s)
+
         ax.set_xlabel('Atom number')
         ax.set_ylabel('Explored volume / nm^3')
         ax.legend()
