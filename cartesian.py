@@ -91,11 +91,6 @@ def parse_cartesian(path):
     :return: x_cart, y_cart, z_cart, times
     """
 
-
-
-
-
-
     try:
         with open(path) as file:
             lines = file.readlines()
@@ -282,6 +277,7 @@ def main(argv=sys.argv[1:]):
     parser.add_argument("--f", type=str, help='Input traj -ox filepath (aligned by cartesian_prepare or in conjuction with --s COM file)', required=True)
     parser.add_argument("--s", type=str, help='OPTIONAL Input traj -com -ox filepath', required=False)
     parser.add_argument("--o", type=str, help='Output.json (json)', required=True, default='cartesian_outfile')
+    parser.add_argument("--resi", type=str, help='OPTIONAL .pdb file for residue-to-atom assignment', required=False)
     global args
     args = parser.parse_args(argv)
     x_cart, y_cart, z_cart, times = parse_cartesian(args.f)
@@ -302,7 +298,35 @@ def main(argv=sys.argv[1:]):
         print(f'Outputting vector dictionary to {args.o}')
         json.dump(vectors, fp)
 
+    if args.resi:
+        try:
+            with open(args.resi) as file:
+                # The whole trajectory
+                lines = file.readlines()
+                # Get the first frame
+                frame_lines = []
+                for line in lines:
+                    if 'TER' in line or 'ENDMDL' in line:
+                        break
+                    elif 'ATOM' in line:
+                        frame_lines.append(line.split()[1:5])
+                print('######')
+                print('Assigning atoms to residues')
+                print('######')
+        except FileNotFoundError:
+            print(f'{args.resi} does not exist, no assignment will be done')
+            exit()
 
+        # Assign atoms to residues
+        residues = {}
+        for line in frame_lines:
+            if line[2]+line[3] not in list(residues.keys()):
+                residues[line[2]+line[3]] = []
+            residues[line[2]+line[3]].append(line[0])
+
+        with open(f'{args.resi}_resis', 'w') as fp:
+            print(f'Outputting residue assignments to {args.resi}_resis')
+            json.dump(residues, fp)
 
 if __name__ == '__main__':
     main()

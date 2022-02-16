@@ -128,11 +128,12 @@ def main(argv=sys.argv[1:]):
     parser = argparse.ArgumentParser()
     parser.add_argument("--f", type=str, help='Input vector.json for trajectory 1', required=True)
     parser.add_argument("--s", type=str, help='OPTIONAL Input vector.json for trajectory 2', default=False)
-    parser.add_argument("--o", type=str, help='Analysis output file', default='analysis.out')
+    parser.add_argument("--o", type=str, help='Analysis output file', default='cartesian_diff.out')
     parser.add_argument("--ohf", type=str, help='Output histograms for the --f file', default='histogram1')
     parser.add_argument("--ohs", type=str, help='OPTIONAL Output histograms for the --s file', default='histogram2')
     parser.add_argument("--plot", type=bool, help='Plot spatial stuff, defaults to False', default=False)
-    parser.add_argument("--pdbs", type=str, help='Input structure in .pdb format of the second trajectory', default=False)
+    parser.add_argument("--pdbs", type=str, help='OPTIONAL Input structure in .pdb format of the second trajectory', default=False)
+    parser.add_argument("--resi", type=str, help='OPTIONAL atoms-to-residues assignment file.json. Will turn on residue mode', required=False)
     global args
     args = parser.parse_args(argv)
 
@@ -183,6 +184,59 @@ def main(argv=sys.argv[1:]):
         output_df_rename.loc[output_df_rename.index[0], f'{args.f} total volume/atom'] = tot_explored_volume_1/len(list(vectors1.keys()))
 
     output_df_rename.to_csv(args.o)
+
+    output_residue_df = pd.DataFrame()
+
+    if args.resi:
+        try:
+            with open(args.resi) as file:
+                resi_assignment = json.load(file)
+        except FileNotFoundError:
+            print(f'{args.resi} not found, will quit.')
+            exit()
+
+        residue_keys = list(resi_assignment.keys())
+        output_df = output_df.set_index('Vector 1')
+
+
+
+        for i, key in enumerate(residue_keys):
+            atoms_in_residue = resi_assignment[key]
+            min_atom=atoms_in_residue[0]
+            max_atom=atoms_in_residue[-1]
+            sum_vol1=output_df.loc[f'atom {min_atom}':f'atom {max_atom}', 'Volume 1 / nm^3'].sum()
+            sum_vol1_step=output_df.loc[f'atom {min_atom}':f'atom {max_atom}', 'Vol 1/step'].sum()
+
+            if args.s:
+                sum_vol2 = output_df.loc[f'atom {min_atom}':f'atom {max_atom}', 'Volume 2 / nm^3'].sum()
+                sum_vol2_step = output_df.loc[f'atom {min_atom}':f'atom {max_atom}', 'Vol 2/step'].sum()
+                residue_df = pd.DataFrame({
+                    f'residue' : key,
+                    f'{args.f} total volume / nm^3' : sum_vol1,
+                    f'{args.f} total volume/atom' : sum_vol1_step,
+                    f'{args.s} total volume / nm^3' : sum_vol2,
+                    f'{args.s} total volume/atom' : sum_vol2_step
+                }, index=[key])
+            else:
+                residue_df = pd.DataFrame({
+                    f'residue': key,
+                    f'{args.f} total volume / nm^3': sum_vol1,
+                    f'{args.f} total volume/atom': sum_vol1_step,
+                }, index=[key])
+
+            output_residue_df = output_residue_df.append(residue_df)
+
+        if args.s:
+            delta_resi = output_residue_df[f'{args.s} total volume / nm^3'] - output_residue_df[f'{args.f} total volume / nm^3']
+            delta_resi = pd.DataFrame(delta_resi, columns=[f'V({args.s})-V({args.f})'])
+            output_residue_df = output_residue_df.join(delta_resi)
+
+        output_residue_df.to_csv(f'{args.o}_resi.csv')
+
+
+
+
+
     with open(args.ohf, 'wb') as file:
         pickle.dump(histograms1, file)
     if args.s:
@@ -195,17 +249,28 @@ def main(argv=sys.argv[1:]):
     if args.plot:
 
         fig, ax = plt.subplots()
-        #print(output_df['Volume 1 / nm^3'])
-        vol_atoms_1 = output_df['Volume 1 / nm^3']
-        name_atoms_1 = list(vectors1.keys())
-        name_atoms_1 = [re.findall(r'\d+', i)[0] for i in name_atoms_1]
-        name_atoms_1 = list(map(int, name_atoms_1))
+        if args.resi:
+            vol_atoms_1 = output_residue_df[f'{args.f} total volume / nm^3']
+            name_atoms_1 = output_residue_df.index
+            plt.xticks(rotation=90)
+        else:
+            vol_atoms_1 = output_df['Volume 1 / nm^3']
+            name_atoms_1 = list(vectors1.keys())
+            name_atoms_1 = [re.findall(r'\d+', i)[0] for i in name_atoms_1]
+            name_atoms_1 = list(map(int, name_atoms_1))
         ax.plot(name_atoms_1, vol_atoms_1, color='blue', label=args.f)
+
         if args.s:
-            name_atoms_2 = list(vectors2.keys())
-            name_atoms_2 = [re.findall(r'\d+', i)[0] for i in name_atoms_2]
-            name_atoms_2 = list(map(int, name_atoms_2))
-            vol_atoms_2 = output_df['Volume 2 / nm^3']
+            if args.resi:
+                vol_atoms_2 = output_residue_df[f'{args.s} total volume / nm^3']
+                name_atoms_2 = output_residue_df.index
+                plt.xticks(rotation=90)
+            else:
+                vol_atoms_2 = output_df['Volume 2 / nm^3']
+                name_atoms_2 = list(vectors2.keys())
+                name_atoms_2 = [re.findall(r'\d+', i)[0] for i in name_atoms_2]
+                name_atoms_2 = list(map(int, name_atoms_2))
+
             ax.plot(name_atoms_2, vol_atoms_2, color='orange', label=args.s)
 
         ax.set_xlabel('Atom number')
