@@ -12,6 +12,9 @@ from mpl_toolkits.mplot3d import Axes3D
 import pandas as pd
 from cartesian import __prepare_matplotlib
 from cartesian_diff import write_to_pdb_beta
+from matplotlib.widgets import TextBox, Slider
+from mpl_toolkits.mplot3d.art3d import Poly3DCollection
+
 
 # Prepare matplotlib parameters
 __prepare_matplotlib()
@@ -284,64 +287,150 @@ def main(argv=sys.argv[1:]):
 
         with open(f'{args.o}/{args.o}_grid.pdb', 'w') as file:
             file.write(grid_pdb)
+
     if args.plot:
 
         atomic_grid_keys = list(atomic_grid.keys())
         atomic_grid_keys_2 = list(atomic_grid_2.keys())
         count_dict_keys = list(grid_count.keys())
         count_dict_keys_2 = list(grid_count_2.keys())
-        fig = plt.figure()
 
 
 
-        maxcols=8
-        nrows = math.ceil(len(atomic_grid_keys) / maxcols)
-        col = 0
-        row = 0
-        def coloring(pop_values):
-            colors = []
-            for value in pop_values:
-
-                if 2 >= value > 0:
-                    colors.append('cyan')
-                elif 5 >= value > 2:
-                    colors.append('blue')
-                elif 10 >= value > 5:
-                    colors.append('orange')
-                else:
-                    colors.append('red')
-            return(colors)
-
-        i = 0
-        for key, key_2 in zip(atomic_grid_keys, atomic_grid_keys_2):
-
-            xs = [x[0] for x in atomic_grid[key]]
-            ys = [x[1] for x in atomic_grid[key]]
-            zs = [x[2] for x in atomic_grid[key]]
-
-            xs_2 = [x[0] for x in atomic_grid_2[key_2]]
-            ys_2 = [x[1] for x in atomic_grid_2[key_2]]
-            zs_2 = [x[2] for x in atomic_grid_2[key_2]]
-
-            #colors = coloring(count_dict[key])
-            ax = fig.add_subplot(nrows, maxcols, i+1, projection='3d')
+        # Adjust bottom to make room for Buttons
+        fig, ax = plt.subplots()
+        # plt.axis('off')
+        ax = fig.add_subplot(projection='3d')
+        plt.subplots_adjust(bottom=0.25)
 
 
+        """ Get (X,Y,Z) unique grid coordinates for TRAJ1"""
+        grids1 = atomic_grid_uniq[atomic_grid_keys[0]]
 
-            ax.scatter(xs=xs, ys=ys, zs=zs, s=10, c='blue', marker='s')
-            ax.scatter(xs=xs_2, ys=ys_2, zs=zs_2, s=10, c='red', marker='s')
-            ax.set_title(key+' '+key_2)
-            ax.set(xlim=(-10,10), ylim=(-10,10), zlim=(-10,10))
-            ax.set_xlabel('Grid X')
-            ax.set_ylabel('Grid Y')
-            ax.set_zlabel('Grid Z')
 
-            col += 1
-            i += 1
-        fig.tight_layout()
+        """ Get (X,Y,Z) unique grid coordinates for TRAJ2"""
+        grids2 = atomic_grid_2_uniq[atomic_grid_keys_2[0]]
+        """ Have to keep order, so can't use sets with intersections etc. """
+        grids1_unq = [grid for grid in grids1 if grid not in grids2] # Coords where only grids 1 reside
+        grids2_unq = [grid for grid in grids2 if grid not in grids1] # Coords where only grids 2 reside
+        grids_intersect = [grid for grid in grids1 if grid in grids2] # Intersection of the two
 
+        #ax.scatter(xs=xs, ys=ys, zs=zs, s=10, c='blue', marker='s')
+        #ax.scatter(xs=xs2, ys=ys2, zs=zs2, s=20, c='red', marker='x')
+
+        def plot_cubes(data, color):
+
+            x_data = [x[0] for x in data]
+            y_data = [y[1] for y in data]
+            z_data = [z[2] for z in data]
+
+            def cuboid_data(o, size):
+                X = [[[0, 1, 0], [0, 0, 0], [1, 0, 0], [1, 1, 0]],
+                     [[0, 0, 0], [0, 0, 1], [1, 0, 1], [1, 0, 0]],
+                     [[1, 0, 1], [1, 0, 0], [1, 1, 0], [1, 1, 1]],
+                     [[0, 0, 1], [0, 0, 0], [0, 1, 0], [0, 1, 1]],
+                     [[0, 1, 0], [0, 1, 1], [1, 1, 1], [1, 1, 0]],
+                     [[0, 1, 1], [0, 0, 1], [1, 0, 1], [1, 1, 1]]]
+                X = np.array(X).astype(float)
+                for i in range(3):
+                    X[:, :, i] *= size[i]
+                X += np.array(o)
+                return X
+
+            def plotCubeAt(positions, colors=None, **kwargs):
+                g = []
+                for p, c in zip(positions, colors):
+                    g.append(cuboid_data(p, size=[args.grid, args.grid, args.grid]))
+                return Poly3DCollection(np.concatenate(g),
+                                        facecolors=np.repeat(colors, 6, axis=0), **kwargs)
+
+            ### POSITION OF THE CUBE
+            positions = [(x * args.grid, y * args.grid, z * args.grid) for x,y,z in zip(x_data,y_data,z_data)]
+            colors = [color for i in range(0,len(positions))]
+            ###
+
+            #fig = plt.figure()
+            #ax = fig.add_subplot(projection='3d')
+            ax.set_box_aspect([1, 1, 1])
+            pc = plotCubeAt(positions, colors=colors, edgecolor="k")
+            ax.add_collection3d(pc)
+
+
+            #plt.show()
+
+        def set_ax_lims():
+            minxyz, maxxyz = min(grids1), max(grids1)
+            minxyz2, maxxyz2 = min(grids2), max(grids2)
+            minx, miny, minz = min([minxyz, minxyz2])
+            maxx, maxy, maxz = max([maxxyz, maxxyz2])
+            mintot = min([minx, miny, minz])
+            maxtot = max([maxx, maxy, maxz])
+
+            ax.set(xlim=(mintot, maxtot), ylim=(mintot, maxtot), zlim=(mintot, maxtot))
+
+        def submit(expression):
+            print(expression)
+            expression = int(expression)
+            """
+            Update the plotted function to the new math *expression*.
+            """
+            """ Get (X,Y,Z) unique grid coordinates for TRAJ1"""
+            grids1 = atomic_grid_uniq[atomic_grid_keys[expression]]
+            """ Get (X,Y,Z) unique grid coordinates for TRAJ2"""
+            grids2 = atomic_grid_2_uniq[atomic_grid_keys_2[expression]]
+            """ Have to keep order, so can't use sets with intersections etc. """
+            grids1_unq = [grid for grid in grids1 if grid not in grids2]  # Coords where only grids 1 reside
+            grids2_unq = [grid for grid in grids2 if grid not in grids1]  # Coords where only grids 2 reside
+            grids_intersect = [grid for grid in grids1 if grid in grids2]  # Intersection of the two
+
+
+            ax.cla()  # clean ax
+
+            if len(grids1_unq) > 0:
+                plot_cubes(data=grids1_unq, color='red')  # Plot cubes which are only present in dataset 1
+            if len(grids2_unq) > 0:
+                plot_cubes(data=grids2_unq, color='blue')  # Plot cubes which are only present in dataset 2
+            if len(grids_intersect) > 0:
+                plot_cubes(data=grids_intersect, color='purple')  # Intersections (i.e. both 1 and 2 have a point here)
+
+
+            ax.set_xlabel('Bin(x)')
+            ax.set_ylabel('Bin(y)')
+            ax.set_zlabel('Bin(z)')
+            ax.set_title(f'Atom {expression}\ngridsize {args.grid}')
+            set_ax_lims()
+
+            ax.autoscale_view()
+
+            plt.draw()
+
+        if len(grids1_unq) > 0:
+            plot_cubes(data=grids1_unq, color='red') # Plot cubes which are only present in dataset 1
+        if len(grids2_unq) > 0:
+            plot_cubes(data=grids2_unq, color='blue') # Plot cubes which are only present in dataset 2
+        if len(grids_intersect) > 0:
+            plot_cubes(data=grids_intersect, color='purple') # Intersections (i.e. both 1 and 2 have a point here)
+
+
+        ax.set_xlabel('Bin(x)')
+        ax.set_ylabel('Bin(y)')
+        ax.set_zlabel('Bin(z)')
+        ax.set_title(f'Atom 0\ngridsize {args.grid}')
+        set_ax_lims()
+        axbox = fig.add_axes([0.2, 0.05, 0.6, 0.075])
+        # text_box = TextBox(axbox, "Atom # / Resi #", textalignment="center")
+        # text_box.on_submit(submit)
+        # text_box.set_val("0")  # Trigger `submit` with the initial string.
+
+        slider = Slider(ax=axbox, label='Atom/Residue #', valmin=0, valmax=len(atomic_grid_keys)-1, valinit=0, valstep=1)
+        slider.on_changed(submit)
+
+        # Show
         plt.show()
-        """
+
+
+
+
 
     if args.method == 'grid_scan':
         ### TEST
