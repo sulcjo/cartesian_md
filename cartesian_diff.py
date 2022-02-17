@@ -64,8 +64,6 @@ def write_to_pdb_beta(pdb, delta):
     # to a pdb file, where it's put into the last column (usually occupied by temperature factors) to be
     # visualized at your leisure (PyMol, vmd, Chimera...)
 
-
-
     try:
         with open(pdb,'r') as file:
             lines = file.readlines()
@@ -116,6 +114,7 @@ def main(argv=sys.argv[1:]):
     global args
     args = parser.parse_args(argv)
 
+    # Set up default output directory
     if not args.o:
         traj1_name = args.f.replace('.json', '')
 
@@ -127,6 +126,7 @@ def main(argv=sys.argv[1:]):
 
     if not os.path.exists(args.o):
         os.makedirs(args.o)
+    ###
 
     try:
         with open(args.f) as file:
@@ -238,15 +238,15 @@ def main(argv=sys.argv[1:]):
         if not args.s:
             print('(!!) Will print B-factors for a single trajectory only in nm^3')
             delta = output_df[f'V({traj1_name})']
-            new_pdb = 'REMARK Volume explored by atom in cartesian space writen in Beta-factors in nm^3'
+            diff_pdb = 'REMARK Volume explored by atom in cartesian space writen in Beta-factors in nm^3 \n'
         else:
             print('(!!) Will print B-factors deltas between the two trajectories (s - f) in nm^3')
             delta = output_df[f'V({traj2_name})'] - output_df[f'V({traj1_name})']
-            new_pdb = 'REMARK Difference of volumes explored by atoms in two trajectories in cartesian space writen in Beta-factors in nm^3'
+            diff_pdb = 'REMARK Difference of volumes explored by atoms in two trajectories in cartesian space writen in Beta-factors in nm^3 \n'
 
 
-        diff_pdb = write_to_pdb_beta(pdb=args.pdbs, delta=delta)
-        with open(f'{args.o}/{traj1_name}_{traj2_name}_diff.pdb', 'w') as file:
+        diff_pdb += write_to_pdb_beta(pdb=args.pdbs, delta=delta)
+        with open(f'{args.o}/{args.o}_diff.pdb', 'w') as file:
             file.write(diff_pdb)
 
     if args.plot:
