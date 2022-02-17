@@ -148,7 +148,7 @@ def grid_rms(grid1, grid2, grid_count1, grid_count2):
     atom1_keys = list(grid1.keys())
     atom2_keys = list(grid2.keys())
     if len(atom1_keys) != len(atom2_keys):
-        print('WARNING grid-datasets used for RMS calculation are of different size, RMS values will suffer some uncertainty!')
+        print('WARNING grid-datasets used for RMS calculation are of different size, RMS values will suffer some uncertainty, atomic indices will be assigned from the second trajectory!')
 
     rmsd_lst = {}
 
@@ -302,45 +302,29 @@ def main(argv=sys.argv[1:]):
             new_pdb = ''
             atom_ind = 0
 
-            with alive_bar(len(lines)) as bar:
-                print('Writing .pdb')
-                for line in lines:
-                    if 'ENDMDL' in line:
-                        new_line = line
-                        atom_ind = 0
-                    elif 'ATOM' in line:
-                        factor = abs(round(delta.iloc[atom_ind], 2))
+            print('Writing .pdb')
+            new_lines = []
+            for line in lines:
+                if 'ENDMDL' in line:
+                    new_lines.append(new_line.replace('\n', '') + '\n')
+                    # atom_ind = 0
+                    break
+                elif 'ATOM' in line:
+                    factor = abs(round(delta.iloc[atom_ind], 2))
 
-                        factor = "{:10.4f}".format(factor)
-                        # This is an ugly hack, replace later
-                        new_line = line.replace(' 0.00 ', factor)
-                        atom_ind += 1
-                    else:
-                        new_line = line
+                    factor = "{:10.4f}".format(factor)
+                    # This is an ugly hack, replace later
+                    new_lines.append(line.replace(' 0.00 ', factor))
+                    atom_ind += 1
+                else:
+                    new_line = line
 
-                    new_line = new_line.replace('\n', '')
-                    new_pdb += new_line
-                    new_pdb += '\n'
+                new_pdb = ''.join(new_lines)
 
-                    bar()
+
 
             with open(f'{args.pdbs}_rms.pdb', 'w') as file:
                 file.write(new_pdb)
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
         plt.show()
 
@@ -407,9 +391,27 @@ def main(argv=sys.argv[1:]):
             args.grid = gridsize
             atomic_grid = grid(vectors1)
             atomic_grid_uniq, grid_count = return_unique(atomic_grid)
-
             atomic_grid_2 = grid(vectors2)
             atomic_grid_2_uniq, grid_count_2 = return_unique(atomic_grid_2)
+
+            ### Check statistics ###
+            vector1_keys = list(vectors1.keys())
+            vectors_num = sum([len(vectors1[key]) for key in vector1_keys])
+            grid1_keys = list(atomic_grid.keys())
+            grid2_keys = list(atomic_grid.keys())
+            grid1_size = sum([len(atomic_grid[i]) for i in grid1_keys])
+            grid2_size = sum([len(atomic_grid[i]) for i in grid2_keys])
+            grid1_unq_size = sum([len(atomic_grid_uniq[i]) for i in grid1_keys])
+            grid2_unq_size = sum([len(atomic_grid_2_uniq[i]) for i in grid2_keys])
+
+            print(f'gs={gridsize} >Total amount of vectors {vectors_num * 2}')
+            print(f'gs={gridsize} >Total amount of gridpoints {grid1_size + grid2_size}')
+            print(f'gs={gridsize} >Total amount of unique gridpoints {grid1_unq_size + grid2_unq_size}')
+            ### ###
+
+
+
+
             rms = grid_rms(atomic_grid_uniq, atomic_grid_2_uniq, grid_count, grid_count_2)
 
             rms_keys = list(rms.keys())

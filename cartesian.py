@@ -23,6 +23,20 @@ Consider omitting hydrogens out of the analysis, these are either constrained or
 information.
 """
 
+def __prepare_matplotlib():
+    import matplotlib.pyplot as plt
+    # Prepare matplotlib parameters
+    SMALL_SIZE = 12
+    MEDIUM_SIZE = 14
+    BIGGER_SIZE = 16
+
+    plt.rc('font', size=SMALL_SIZE)  # controls default text sizes
+    plt.rc('axes', titlesize=SMALL_SIZE)  # fontsize of the axes title
+    plt.rc('axes', labelsize=MEDIUM_SIZE)  # fontsize of the x and y labels
+    plt.rc('xtick', labelsize=SMALL_SIZE)  # fontsize of the tick labels
+    plt.rc('ytick', labelsize=SMALL_SIZE)  # fontsize of the tick labels
+    plt.rc('legend', fontsize=SMALL_SIZE)  # legend fontsize
+    plt.rc('figure', titlesize=BIGGER_SIZE)  # fontsize of the figure title
 
 def assign_to_dict(data, x_cart, y_cart, z_cart):
     times = []
@@ -121,24 +135,6 @@ def parse_cartesian(path):
         x_cart[x_key] = []
         y_cart[y_key] = []
         z_cart[z_key] = []
-
-
-
-    # Get indexes for parsing
-    #pattern = '(?<=s)[0-9]*'
-    #x_ind = [re.search(pattern, line)[0] for line in comments if 'atom' in line and 'X' in line]
-    #y_ind = [re.search(pattern, line)[0] for line in comments if 'atom' in line and 'Y' in line]
-    #z_ind = [re.search(pattern, line)[0] for line in comments if 'atom' in line and 'Z' in line]
-
-
-    # Compare lengths of indexes and dictionary keys to be sure
-    #if len(x_cart.keys())==len(x_ind) and len(y_cart.keys())==len(y_ind) and len(z_cart.keys())==len(z_ind):
-    #    pass
-    #else:
-    #    print('Mismatch between indices and coordinates, will exit')
-    #    exit()
-
-
 
     # Init multiprocessing.Pool()
     pool = mp.Pool(mp.cpu_count())
@@ -330,50 +326,6 @@ def main(argv=sys.argv[1:]):
 
 if __name__ == '__main__':
     main()
-
-
-
-
-
-
-"""
-exit()
-# Plotting part, add to a function later
-fig = plt.figure()
-axs = []
-
-
-max_cols = 7
-#plots_total = len(vectors)
-plots_total=10
-ax_index = 1
-axs = []
-
-
-
-for ind, vector_key in enumerate(vectors):
-    vectors_of_atom = vectors[vector_key]
-    x = np.array([i[0] for i in vectors_of_atom])
-    y = np.array([i[1] for i in vectors_of_atom])
-    z = np.array([i[2] for i in vectors_of_atom])
-
-
-
-    #ax = fig.add_subplot(math.ceil(plots_total/max_cols), max_cols, ax_index, projection='3d')
-    #ax.set_title(vector_key)
-    #ax.scatter(xs=x,ys=y,zs=z)
-    #ax_index += 1
-    #ax.set(xlim=(0, 10), ylim=(0, 10), zlim=(0, 10))
-    #axs.append(ax)
-
-
-
-    if ind > 10:
-        break
-
-#plt.show()
-
-"""
 
 
 
