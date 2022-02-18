@@ -4,7 +4,6 @@ import json
 import numpy as np
 import math
 import matplotlib
-#matplotlib.use('GTK3Agg') #depends on pycairo, PyGObject packages
 from alive_progress import alive_bar
 from cartesian_diff import write_to_pdb_beta
 import matplotlib.pyplot as plt
@@ -277,7 +276,6 @@ def main(argv=sys.argv[1:]):
         rms_out=pd.DataFrame(rms_out, columns=[f'{traj1_name}/{traj2_name}'])
         rms_out.to_csv(f'{args.o}/{args.o}_grid.csv')
 
-
     if args.pdbs:
         print('(!!) Will print B-factors of conformational deltas between the two trajectories in arbitrary units')
         delta = pd.Series(rms)
@@ -318,7 +316,7 @@ def main(argv=sys.argv[1:]):
         #ax.scatter(xs=xs, ys=ys, zs=zs, s=10, c='blue', marker='s')
         #ax.scatter(xs=xs2, ys=ys2, zs=zs2, s=20, c='red', marker='x')
 
-        def plot_cubes(data, color):
+        def plot_cubes(data, color, label):
 
             x_data = [x[0] for x in data]
             y_data = [y[1] for y in data]
@@ -354,19 +352,31 @@ def main(argv=sys.argv[1:]):
             ax.set_box_aspect([1, 1, 1])
             pc = plotCubeAt(positions, colors=colors, edgecolor="k")
             ax.add_collection3d(pc)
+            ax.scatter(-100, -100, -100, color=color, label=label, marker='s', s=50)
 
 
             #plt.show()
 
-        def set_ax_lims():
-            minxyz, maxxyz = min(grids1), max(grids1)
-            minxyz2, maxxyz2 = min(grids2), max(grids2)
-            minx, miny, minz = min([minxyz, minxyz2])
-            maxx, maxy, maxz = max([maxxyz, maxxyz2])
-            mintot = min([minx, miny, minz])
-            maxtot = max([maxx, maxy, maxz])
+        def set_ax_lims(grids1, grids2):
+            """ Flatten the grids datasets, join them and find the lowest and highest gridpoint. Set ax limits and ticks """
+            flat_list = [item for sublist in grids1 for item in sublist]
+            flat_list_2 = [item for sublist in grids2 for item in sublist]
+            flat_list = flat_list + flat_list_2
+            lower, upper = (min(flat_list) * args.grid) - args.grid, (max(flat_list) * args.grid) + args.grid
+            print(lower, upper)
 
-            ax.set(xlim=(mintot, maxtot), ylim=(mintot, maxtot), zlim=(mintot, maxtot))
+            ax.set_xlabel('Bin(x) / nm')
+            ax.set_ylabel('Bin(y) / nm')
+            ax.set_zlabel('Bin(z) / nm')
+            # ax.autoscale_view()
+            lower_int = int(math.floor(lower)-4*args.grid)
+            upper_int = int(math.ceil(upper)+4*args.grid)
+
+            ticks = [float(i * args.grid) for i in range(lower_int, upper_int)]
+            ax.set_xticks(ticks=ticks)
+            ax.set_yticks(ticks=ticks)
+            ax.set_zticks(ticks=ticks)
+            ax.set(xlim=(lower, upper), ylim=(lower, upper), zlim=(lower, upper))
 
         def submit(expression):
             print(expression)
@@ -387,36 +397,33 @@ def main(argv=sys.argv[1:]):
             ax.cla()  # clean ax
 
             if len(grids1_unq) > 0:
-                plot_cubes(data=grids1_unq, color='red')  # Plot cubes which are only present in dataset 1
+                plot_cubes(data=grids1_unq, color='red', label=f'{traj1_name} only')  # Plot cubes which are only present in dataset 1
             if len(grids2_unq) > 0:
-                plot_cubes(data=grids2_unq, color='blue')  # Plot cubes which are only present in dataset 2
+                plot_cubes(data=grids2_unq, color='blue', label=f'{traj2_name} only')  # Plot cubes which are only present in dataset 2
             if len(grids_intersect) > 0:
-                plot_cubes(data=grids_intersect, color='purple')  # Intersections (i.e. both 1 and 2 have a point here)
+                plot_cubes(data=grids_intersect, color='purple', label=f'intersection')  # Intersections (i.e. both 1 and 2 have a point here)
+            ax.legend()
 
-
-            ax.set_xlabel('Bin(x)')
-            ax.set_ylabel('Bin(y)')
-            ax.set_zlabel('Bin(z)')
+            set_ax_lims(grids1, grids2)
             ax.set_title(f'Atom {expression}\ngridsize {args.grid}')
-            set_ax_lims()
 
-            ax.autoscale_view()
+            #ax.autoscale_view()
 
             plt.draw()
-
+        """
         if len(grids1_unq) > 0:
             plot_cubes(data=grids1_unq, color='red') # Plot cubes which are only present in dataset 1
         if len(grids2_unq) > 0:
             plot_cubes(data=grids2_unq, color='blue') # Plot cubes which are only present in dataset 2
         if len(grids_intersect) > 0:
             plot_cubes(data=grids_intersect, color='purple') # Intersections (i.e. both 1 and 2 have a point here)
+        """
 
+        submit(0)
+        set_ax_lims(grids1, grids2)
+        """ax.set_title(f'Atom 0\ngridsize {args.grid} in real coordinates')
+        """
 
-        ax.set_xlabel('Bin(x)')
-        ax.set_ylabel('Bin(y)')
-        ax.set_zlabel('Bin(z)')
-        ax.set_title(f'Atom 0\ngridsize {args.grid}')
-        set_ax_lims()
         axbox = fig.add_axes([0.2, 0.05, 0.6, 0.075])
         # text_box = TextBox(axbox, "Atom # / Resi #", textalignment="center")
         # text_box.on_submit(submit)
@@ -427,10 +434,6 @@ def main(argv=sys.argv[1:]):
 
         # Show
         plt.show()
-
-
-
-
 
     if args.method == 'grid_scan':
         ### TEST
