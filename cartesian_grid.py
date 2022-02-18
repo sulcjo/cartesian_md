@@ -4,6 +4,8 @@ import json
 import numpy as np
 import math
 import matplotlib
+matplotlib.use('qtagg')
+import multiprocessing as mp
 from alive_progress import alive_bar
 from cartesian_diff import write_to_pdb_beta
 import matplotlib.pyplot as plt
@@ -83,15 +85,40 @@ def return_unique(grid_pop_vectors):
     new_dict = {}
     count_dict = {}
     # For each atom
+    # Init multiprocessing.Pool()
+    """
     for grid_key in grid_keys:
         new_dict[grid_key] = []
         count_dict[grid_key] = []
+        print(f'Returning unique {grid_key}')
         # For each grid visited by the atom
         for grid_coordinates in grid_pop_vectors[grid_key]:
             if not grid_coordinates in new_dict[grid_key]:
-                new_dict[grid_key].append(grid_coordinates)
+
+                #Throw away bins that have populations below args.pop_threshold, append the rest
                 count = grid_pop_vectors[grid_key].count(grid_coordinates)
-                count_dict[grid_key].append(count)
+                if count > args.pop_threshold:
+
+                    new_dict[grid_key].append(grid_coordinates)
+                    count_dict[grid_key].append(count)
+    """
+    # Improved and faster with sets, but returns it unordered (which shouldn't matter)
+    #
+    for grid_key in grid_keys:
+        # Move to tuple so it's hashable and can be turned into a set. An object is hashable if it has a hash value which never changes during its lifetime (it needs a __hash__() method), and can be compared to other objects (it needs an __eq__() method). Hashable objects which compare equal must have the same hash value.
+        vectors_tuple = tuple(grid_pop_vectors)
+        vectors_set = set(vectors_tuple)
+
+        new_dict[grid_key] = tuple(vectors_set)
+        count_dict[grid_key] = []
+        for uniq_coords in new_dict[grid_key]:
+            count_dict[grid_key].append(new_dict[grid_key].count(uniq_coords))
+
+        new_dict[grid_key] = np.array(new_dict[grid_key])
+        print(f'Returning unique {grid_key}')
+
+
+
 
     """
     Returns something like this (new_dict)
@@ -200,6 +227,8 @@ def main(argv=sys.argv[1:]):
     parser.add_argument('--o', type=str, help='Output directory, defaults to names of trajectories used separated by _', required=False)
     parser.add_argument('--pdbs', type=str, help='OPTIONAl .pdb file to generate rms-based coloring', required=False, default=False)
     parser.add_argument('--plot', type=str, help='OPTIONAL plot results in a 3D-plot', required=False, default=False)
+    parser.add_argument('--pop_threshold', type=int, help='Bins with populations lower than this will be disregarded for plotting, defaults to 10 (good for throwing away SSAP caused artefacts)', required=False, default=10)
+    parser.add_argument('--resi', type=str, help='Residue assignment (for plotting)', required=False, default=False)
     global args
     args = parser.parse_args(argv)
 
@@ -243,8 +272,14 @@ def main(argv=sys.argv[1:]):
         }
          """
         atomic_grid = grid(vectors1)
-        atomic_grid_uniq, grid_count = return_unique(atomic_grid)
         atomic_grid_2 = grid(vectors2)
+
+        atomic_grid_uniq = {}
+        grid_count = {}
+        atomic_grid_2_uniq = {}
+        grid_count_2 = {}
+
+        atomic_grid_uniq, grid_count = return_unique(atomic_grid)
         atomic_grid_2_uniq, grid_count_2 = return_unique(atomic_grid_2)
 
         # Calculate original points amount
@@ -271,6 +306,7 @@ def main(argv=sys.argv[1:]):
         #print(int_rms_1)
         #print(int_rms_2)
 
+
         rms=grid_rms(atomic_grid_uniq, atomic_grid_2_uniq, grid_count, grid_count_2)
         rms_out=pd.Series(rms).T
         rms_out=pd.DataFrame(rms_out, columns=[f'{traj1_name}/{traj2_name}'])
@@ -288,12 +324,20 @@ def main(argv=sys.argv[1:]):
 
     if args.plot:
 
+        if args.resi:
+            try:
+                with open(args.resi) as file:
+                    resi_assignment = json.load(file)
+            except FileNotFoundError:
+                print(f'{args.resi} not found, will quit.')
+                exit()
+
+            residue_keys = list(resi_assignment.keys())
+
         atomic_grid_keys = list(atomic_grid.keys())
         atomic_grid_keys_2 = list(atomic_grid_2.keys())
         count_dict_keys = list(grid_count.keys())
         count_dict_keys_2 = list(grid_count_2.keys())
-
-
 
         # Adjust bottom to make room for Buttons
         fig, ax = plt.subplots(figsize=(15,12))
@@ -302,20 +346,33 @@ def main(argv=sys.argv[1:]):
         plt.subplots_adjust(bottom=0.25)
 
 
-        """ Get (X,Y,Z) unique grid coordinates for TRAJ1"""
-        grids1 = atomic_grid_uniq[atomic_grid_keys[0]]
+
+        """
+        grids1 = []
+        for agu, agupop in zip(atomic_grid_uniq[atomic_grid_keys[0]], grid_count[atomic_grid_keys[0]]):
+            if agupop > args.pop_threshold:
+                grids1.append(agu)
+        grids2 = []
+        for agu, agupop in zip(atomic_grid_2_uniq[atomic_grid_keys_2[0]], grid_count_2[atomic_grid_keys_2[0]]):
+            if agupop > args.pop_threshold:
+                grids2.append(agu)
 
 
-        """ Get (X,Y,Z) unique grid coordinates for TRAJ2"""
-        grids2 = atomic_grid_2_uniq[atomic_grid_keys_2[0]]
-        """ Have to keep order, so can't use sets with intersections etc. """
+        #Get (X,Y,Z) unique grid coordinates for TRAJ1
+        #grids1 = atomic_grid_uniq[atomic_grid_keys[0]]
+
+
+        #Get (X,Y,Z) unique grid coordinates for TRAJ2
+        #grids2 = atomic_grid_2_uniq[atomic_grid_keys_2[0]]
+        #Have to keep order, so can't use sets with intersections etc.
         grids1_unq = [grid for grid in grids1 if grid not in grids2] # Coords where only grids 1 reside
         grids2_unq = [grid for grid in grids2 if grid not in grids1] # Coords where only grids 2 reside
         grids_intersect = [grid for grid in grids1 if grid in grids2] # Intersection of the two
 
         #ax.scatter(xs=xs, ys=ys, zs=zs, s=10, c='blue', marker='s')
         #ax.scatter(xs=xs2, ys=ys2, zs=zs2, s=20, c='red', marker='x')
-
+        """
+    
         def plot_cubes(data, color, label):
 
             x_data = [x[0] for x in data]
@@ -351,6 +408,7 @@ def main(argv=sys.argv[1:]):
             #ax = fig.add_subplot(projection='3d')
             ax.set_box_aspect([1, 1, 1])
             pc = plotCubeAt(positions, colors=colors, edgecolor="k")
+            pc.set_zsort('min') # not needed?
             ax.add_collection3d(pc)
             ax.scatter(-100, -100, -100, color=color, label=label, marker='s', s=50)
 
@@ -363,14 +421,14 @@ def main(argv=sys.argv[1:]):
             flat_list_2 = [item for sublist in grids2 for item in sublist]
             flat_list = flat_list + flat_list_2
             lower, upper = (min(flat_list) * args.grid) - args.grid, (max(flat_list) * args.grid) + args.grid
-            print(lower, upper)
+            #print(lower, upper)
 
             ax.set_xlabel('Bin(x) / nm')
             ax.set_ylabel('Bin(y) / nm')
             ax.set_zlabel('Bin(z) / nm')
             # ax.autoscale_view()
-            lower_int = int(math.floor(lower)-100*args.grid)
-            upper_int = int(math.ceil(upper)+100*args.grid)
+            lower_int = int(math.floor(lower)-1000*args.grid)
+            upper_int = int(math.ceil(upper)+1000*args.grid)
 
             ticks = [float(i * args.grid) for i in range(lower_int, upper_int)]
             ax.set_xticks(ticks=ticks)
@@ -381,9 +439,29 @@ def main(argv=sys.argv[1:]):
         def submit(expression):
             global current_plot
             current_plot = expression
+
+
+            #print(atomic_grid_uniq[f'atom {current_plot+1}'])
             """
             Update the plotted function to the new math *expression*.
             """
+
+            """
+            We're using the --pop_threshold argument to specify the minimum population of the bin to be considered for plotting
+            If the population is < pop_threshold, we disregard it
+            """
+            """
+            grids1 = []
+            for agu, agupop in zip(atomic_grid_uniq[atomic_grid_keys[current_plot]], grid_count[atomic_grid_keys[current_plot]]):
+                if agupop > args.pop_threshold:
+                    grids1.append(agu)
+            grids2 = []
+            for agu, agupop in zip(atomic_grid_2_uniq[atomic_grid_keys_2[current_plot]], grid_count_2[atomic_grid_keys_2[current_plot]]):
+                if agupop > args.pop_threshold:
+                    grids2.append(agu)
+            """
+
+
             """ Get (X,Y,Z) unique grid coordinates for TRAJ1"""
             grids1 = atomic_grid_uniq[atomic_grid_keys[current_plot]]
             """ Get (X,Y,Z) unique grid coordinates for TRAJ2"""
@@ -405,7 +483,7 @@ def main(argv=sys.argv[1:]):
 
             ax.legend(loc='upper left')
             set_ax_lims(grids1, grids2)
-            ax.set_title(f'Atom {expression}\ngridsize {args.grid}')
+            ax.set_title(f'Atom {expression+1}\ngridsize {args.grid}, pop. thresh. {args.pop_threshold}')
 
             #ax.autoscale_view()
 
@@ -417,11 +495,10 @@ def main(argv=sys.argv[1:]):
                 submit(plot)
                 plt.savefig(f'{args.o}/gridplot_atom{current_plot}.png')
 
-
         global current_plot
         current_plot = 0
         submit(current_plot)
-        set_ax_lims(grids1, grids2)
+
 
         axbox = fig.add_axes([0.3, 0.05, 0.6, 0.075])
         save_axbox = fig.add_axes([0.8, 0.075, 0.2, 0.05])
