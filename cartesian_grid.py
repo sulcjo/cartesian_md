@@ -11,7 +11,7 @@ from mpl_toolkits.mplot3d import Axes3D
 import pandas as pd
 from cartesian import __prepare_matplotlib
 from cartesian_diff import write_to_pdb_beta
-from matplotlib.widgets import TextBox, Slider
+from matplotlib.widgets import TextBox, Slider, Button
 from mpl_toolkits.mplot3d.art3d import Poly3DCollection
 
 
@@ -296,8 +296,8 @@ def main(argv=sys.argv[1:]):
 
 
         # Adjust bottom to make room for Buttons
-        fig, ax = plt.subplots()
-        # plt.axis('off')
+        fig, ax = plt.subplots(figsize=(15,12))
+        plt.axis('off')
         ax = fig.add_subplot(projection='3d')
         plt.subplots_adjust(bottom=0.25)
 
@@ -369,8 +369,8 @@ def main(argv=sys.argv[1:]):
             ax.set_ylabel('Bin(y) / nm')
             ax.set_zlabel('Bin(z) / nm')
             # ax.autoscale_view()
-            lower_int = int(math.floor(lower)-4*args.grid)
-            upper_int = int(math.ceil(upper)+4*args.grid)
+            lower_int = int(math.floor(lower)-100*args.grid)
+            upper_int = int(math.ceil(upper)+100*args.grid)
 
             ticks = [float(i * args.grid) for i in range(lower_int, upper_int)]
             ax.set_xticks(ticks=ticks)
@@ -379,15 +379,15 @@ def main(argv=sys.argv[1:]):
             ax.set(xlim=(lower, upper), ylim=(lower, upper), zlim=(lower, upper))
 
         def submit(expression):
-            print(expression)
-            expression = int(expression)
+            global current_plot
+            current_plot = expression
             """
             Update the plotted function to the new math *expression*.
             """
             """ Get (X,Y,Z) unique grid coordinates for TRAJ1"""
-            grids1 = atomic_grid_uniq[atomic_grid_keys[expression]]
+            grids1 = atomic_grid_uniq[atomic_grid_keys[current_plot]]
             """ Get (X,Y,Z) unique grid coordinates for TRAJ2"""
-            grids2 = atomic_grid_2_uniq[atomic_grid_keys_2[expression]]
+            grids2 = atomic_grid_2_uniq[atomic_grid_keys_2[current_plot]]
             """ Have to keep order, so can't use sets with intersections etc. """
             grids1_unq = [grid for grid in grids1 if grid not in grids2]  # Coords where only grids 1 reside
             grids2_unq = [grid for grid in grids2 if grid not in grids1]  # Coords where only grids 2 reside
@@ -402,35 +402,42 @@ def main(argv=sys.argv[1:]):
                 plot_cubes(data=grids2_unq, color='blue', label=f'{traj2_name} only')  # Plot cubes which are only present in dataset 2
             if len(grids_intersect) > 0:
                 plot_cubes(data=grids_intersect, color='purple', label=f'intersection')  # Intersections (i.e. both 1 and 2 have a point here)
-            ax.legend()
 
+            ax.legend(loc='upper left')
             set_ax_lims(grids1, grids2)
             ax.set_title(f'Atom {expression}\ngridsize {args.grid}')
 
             #ax.autoscale_view()
 
             plt.draw()
-        """
-        if len(grids1_unq) > 0:
-            plot_cubes(data=grids1_unq, color='red') # Plot cubes which are only present in dataset 1
-        if len(grids2_unq) > 0:
-            plot_cubes(data=grids2_unq, color='blue') # Plot cubes which are only present in dataset 2
-        if len(grids_intersect) > 0:
-            plot_cubes(data=grids_intersect, color='purple') # Intersections (i.e. both 1 and 2 have a point here)
-        """
 
-        submit(0)
+        def save_all(_):
+            global current_plot
+            for plot in range(0,len(atomic_grid_keys)):
+                submit(plot)
+                plt.savefig(f'{args.o}/gridplot_atom{current_plot}.png')
+
+
+        global current_plot
+        current_plot = 0
+        submit(current_plot)
         set_ax_lims(grids1, grids2)
-        """ax.set_title(f'Atom 0\ngridsize {args.grid} in real coordinates')
-        """
 
-        axbox = fig.add_axes([0.2, 0.05, 0.6, 0.075])
+        axbox = fig.add_axes([0.3, 0.05, 0.6, 0.075])
+        save_axbox = fig.add_axes([0.8, 0.075, 0.2, 0.05])
+        save_all_axbox = fig.add_axes([0.8, 0.025, 0.2, 0.05])
         # text_box = TextBox(axbox, "Atom # / Resi #", textalignment="center")
         # text_box.on_submit(submit)
         # text_box.set_val("0")  # Trigger `submit` with the initial string.
 
         slider = Slider(ax=axbox, label='Atom/Residue #', valmin=0, valmax=len(atomic_grid_keys)-1, valinit=0, valstep=1)
         slider.on_changed(submit)
+
+        save_button = Button(ax=save_axbox, label='Save current')
+        save_button.on_clicked(lambda x: plt.savefig(f'{args.o}/gridplot_atom{current_plot}.png'))
+
+        save_all_button = Button(ax=save_all_axbox, label='Save all')
+        save_all_button.on_clicked(save_all)
 
         # Show
         plt.show()
