@@ -1,11 +1,26 @@
 import argparse
 import sys, os
-import json
+
+# ujson is recommended but not needed, speeds up json vectors loading
+try:
+    import ujson as json
+except ImportError:
+    try:
+        import simplejson as json
+    except ImportError:
+        import json
+
+
 import numpy as np
 import math
 import matplotlib
 matplotlib.use('qtagg')
-import multiprocessing as mp
+try:
+    import multiprocessing as mp
+    multiprocess = True
+except ImportError:
+    multiprocess = False
+
 from alive_progress import alive_bar
 from cartesian_diff import write_to_pdb_beta
 import matplotlib.pyplot as plt
@@ -19,6 +34,40 @@ from mpl_toolkits.mplot3d.art3d import Poly3DCollection
 
 # Prepare matplotlib parameters
 __prepare_matplotlib()
+
+
+def assign_into_grid_member(coordinate):
+    # print(coordinate)
+    if (coordinate / args.grid).is_integer():
+        # if the atom coordinate is a whole number, we want to make it a 50 % chance it will be
+        # assigned to the lower grid or 50 % to upper grid (so grids are, with enough samples, of the same size)
+        if coordinate % 2 == 0:  # had if atomX % 2 ==0 ; WEIRD? !!!!!
+            grid_x = (
+                                 coordinate / args.grid) - 1  # If the atomX is an even number, assign to "the left" (into lower grid member)
+        else:
+            grid_x = coordinate / args.grid  # If odd, assign to higher grid member
+    else:
+        grid_x = math.floor(coordinate / args.grid)  # Assign into the grid member
+    return (int(grid_x))
+
+def atom_atomic_grids_asynch(key):
+    new_grids = []
+    atomXs = [vector[0] for vector in glob_vectors[key]]
+    atomYs = [vector[1] for vector in glob_vectors[key]]
+    atomZs = [vector[2] for vector in glob_vectors[key]]
+    for atomX, atomY, atomZ in zip(atomXs, atomYs, atomZs):
+        new_grid_tuple = [None, None, None]
+        new_grid_tuple[0] = assign_into_grid_member(atomX)
+        new_grid_tuple[1] = assign_into_grid_member(atomY)
+        new_grid_tuple[2] = assign_into_grid_member(atomZ)
+        new_grids.append(tuple(new_grid_tuple))
+    return_dict = {}
+    return_dict[key] = tuple(new_grids)
+
+    return (return_dict)
+
+
+
 
 def grid(vectors):
     vectors_keys = list(vectors.keys())
@@ -38,34 +87,50 @@ def grid(vectors):
         we're using simple math to assign coordinates into correct brackets. This is much faster and much more elegant.        
         """
 
+        global glob_vectors
+        glob_vectors = vectors
+        glob_vectors_keys = tuple(glob_vectors.keys())
+
+
+        """
+        Improve with numpy or pandas, apply the function to the whole array,
+        or use Python mapping, don't iterate       
+        
+        """
+
+
         atomic_grids = {}
+        if args.mp:
 
-        def assign_into_grid_member(coordinate):
-            #print(coordinate)
-            if (coordinate / args.grid).is_integer():
-                # if the atom coordinate is a whole number, we want to make it a 50 % chance it will be
-                # assigned to the lower grid or 50 % to upper grid (so grids are, with enough samples, of the same size)
-                if atomX % 2 == 0:
-                    grid_x = (coordinate / args.grid) - 1  # If the atomX is an even number, assign to "the left" (into lower grid member)
-                else:
-                    grid_x = coordinate / args.grid  # If odd, assign to higher grid member
-            else:
-                grid_x = math.floor(coordinate / args.grid)  # Assign into the grid member
-            return(int(grid_x))
+            print(f'Using multiprocessing with {args.mp}')
+            # Assign coordinates to a dictionary
+            pool = mp.Pool(args.mp)
 
-        for atom in vectors_keys:
-            atomic_grids[atom] = []
+            atomic_grids = pool.map_async(atom_atomic_grids_asynch, glob_vectors_keys).get()
+            #atomic_grids[atom] = result.get()
+            pool.close()
+            pool.join()
+            atomic_grids = {list(grid_tuple.keys())[0]:tuple(grid_tuple.values())[0] for grid_tuple in atomic_grids}
 
-            atomXs = [vector[0] for vector in vector[atom]]
-            atomYs = [vector[1] for vector in vector[atom]]
-            atomZs = [vector[2] for vector in vector[atom]]
+        else:
+            print('NOT using multiprocessing')
+            for atom in vectors_keys:
+                atomic_grids[atom] = []
 
-            for atomX, atomY, atomZ in zip(atomXs, atomYs, atomZs):
-                new_grid_tuple = [None, None, None]
-                new_grid_tuple[0] = assign_into_grid_member(atomX)
-                new_grid_tuple[1] = assign_into_grid_member(atomY)
-                new_grid_tuple[2] = assign_into_grid_member(atomZ)
-                atomic_grids[atom].append(new_grid_tuple)
+                atomXs = [vector[0] for vector in vector[atom]]
+                atomYs = [vector[1] for vector in vector[atom]]
+                atomZs = [vector[2] for vector in vector[atom]]
+
+                for atomX, atomY, atomZ in zip(atomXs, atomYs, atomZs):
+                    new_grid_tuple = [None, None, None]
+                    new_grid_tuple[0] = assign_into_grid_member(atomX)
+                    new_grid_tuple[1] = assign_into_grid_member(atomY)
+                    new_grid_tuple[2] = assign_into_grid_member(atomZ)
+                    atomic_grids[atom].append(new_grid_tuple)
+
+
+
+
 
         return(atomic_grids)
 
@@ -84,42 +149,41 @@ def return_unique(grid_pop_vectors):
     grid_keys = list(grid_pop_vectors.keys())
     new_dict = {}
     count_dict = {}
-    # For each atom
-    # Init multiprocessing.Pool()
-    """
-    for grid_key in grid_keys:
-        new_dict[grid_key] = []
-        count_dict[grid_key] = []
-        print(f'Returning unique {grid_key}')
-        # For each grid visited by the atom
-        for grid_coordinates in grid_pop_vectors[grid_key]:
-            if not grid_coordinates in new_dict[grid_key]:
-
-                #Throw away bins that have populations below args.pop_threshold, append the rest
-                count = grid_pop_vectors[grid_key].count(grid_coordinates)
-                if count > args.pop_threshold:
-
-                    new_dict[grid_key].append(grid_coordinates)
-                    count_dict[grid_key].append(count)
-    """
-    # Improved and faster with sets, but returns it unordered (which shouldn't matter)
-    #
-    for grid_key in grid_keys:
-        # Move to tuple so it's hashable and can be turned into a set. An object is hashable if it has a hash value which never changes during its lifetime (it needs a __hash__() method), and can be compared to other objects (it needs an __eq__() method). Hashable objects which compare equal must have the same hash value.
-        vectors_tuple = tuple(grid_pop_vectors)
-        vectors_set = set(vectors_tuple)
-
-        new_dict[grid_key] = tuple(vectors_set)
-        count_dict[grid_key] = []
-        for uniq_coords in new_dict[grid_key]:
-            count_dict[grid_key].append(new_dict[grid_key].count(uniq_coords))
-
-        new_dict[grid_key] = np.array(new_dict[grid_key])
-        print(f'Returning unique {grid_key}')
 
 
+    backend=1 # Numpy backend doesn't seem to work later when asking for dataset differences and intersection
 
 
+    if backend==0:
+        for grid_key in grid_keys:
+            new_dict[grid_key] = []
+            count_dict[grid_key] = []
+            print(f'Returning unique {grid_key}')
+            # For each grid visited by the atom
+            for grid_coordinates in grid_pop_vectors[grid_key]:
+                if not grid_coordinates in new_dict[grid_key]:
+
+                    #Throw away bins that have populations below args.pop_threshold, append the rest
+                    count = grid_pop_vectors[grid_key].count(grid_coordinates)
+                    if count > args.pop_threshold:
+
+                        new_dict[grid_key].append(grid_coordinates)
+                        count_dict[grid_key].append(count)
+
+    if backend==1:
+        # Improved and faster with numpy
+        with alive_bar(len(grid_keys)) as bar:
+            print('Finding unique bins')
+            for grid_key in grid_keys:
+                current_vectors = np.array(grid_pop_vectors[grid_key])
+                uniqs, counts = np.unique(current_vectors, axis=0, return_counts=True) # Returns unique tuples of X,Y,Z (axis=0) and their counts in the original array (return_counts=True)
+                which_to_delete = []
+                for i, count in enumerate(counts):
+                    if count < args.pop_threshold:
+                        which_to_delete.append(i)
+                new_dict[grid_key] = np.delete(uniqs, which_to_delete, axis=0)
+                count_dict[grid_key] = np.delete(counts, which_to_delete, axis=0)
+                bar()
     """
     Returns something like this (new_dict)
     {'p1': [[1, 0, 0], [-1, 0, -1]], 'p2': [[2, 2, 5], [1, 2, 5], [2, 2, 6]], 'p3': [[-9, -3, 3], [-10, -4, 3], [-10, -3, 3]]}
@@ -229,6 +293,7 @@ def main(argv=sys.argv[1:]):
     parser.add_argument('--plot', type=str, help='OPTIONAL plot results in a 3D-plot', required=False, default=False)
     parser.add_argument('--pop_threshold', type=int, help='Bins with populations lower than this will be disregarded for plotting, defaults to 10 (good for throwing away SSAP caused artefacts)', required=False, default=10)
     parser.add_argument('--resi', type=str, help='Residue assignment (for plotting)', required=False, default=False)
+    parser.add_argument('--mp', type=int, help='Nthreads to use for calculations, defaults to 1', required=False, default=False)
     global args
     args = parser.parse_args(argv)
 
@@ -249,14 +314,15 @@ def main(argv=sys.argv[1:]):
     # Load vectors generated by cartesian.py
     try:
         with open(args.f) as file:
+
             vectors1 = json.load(file)
         with open(args.s) as file:
+
             vectors2 = json.load(file)
     except FileNotFoundError:
         print(f'No {args.f} or {args.s} found, will quit')
         exit()
     ###
-
     if args.method == 'grid':
 
         """
@@ -271,16 +337,16 @@ def main(argv=sys.argv[1:]):
             'p3': [(-8.6, -2.5, 3.0), (-9.78, -3.15, 3.6), (-9.99, -2.5, 3.7)]
         }
          """
+
         atomic_grid = grid(vectors1)
         atomic_grid_2 = grid(vectors2)
 
-        atomic_grid_uniq = {}
-        grid_count = {}
-        atomic_grid_2_uniq = {}
-        grid_count_2 = {}
+
 
         atomic_grid_uniq, grid_count = return_unique(atomic_grid)
         atomic_grid_2_uniq, grid_count_2 = return_unique(atomic_grid_2)
+
+
 
         # Calculate original points amount
         vector1_keys = list(vectors1.keys())
@@ -310,7 +376,7 @@ def main(argv=sys.argv[1:]):
         rms=grid_rms(atomic_grid_uniq, atomic_grid_2_uniq, grid_count, grid_count_2)
         rms_out=pd.Series(rms).T
         rms_out=pd.DataFrame(rms_out, columns=[f'{traj1_name}/{traj2_name}'])
-        rms_out.to_csv(f'{args.o}/{args.o}_grid.csv')
+        rms_out.to_csv(f'{args.o}/{args.o}_grid_g{args.grid}_p{args.pop_threshold}.csv')
 
     if args.pdbs:
         print('(!!) Will print B-factors of conformational deltas between the two trajectories in arbitrary units')
@@ -322,7 +388,7 @@ def main(argv=sys.argv[1:]):
         with open(f'{args.o}/{args.o}_grid.pdb', 'w') as file:
             file.write(grid_pdb)
 
-    if args.plot:
+    if args.plot.lower == 'true' :
 
         if args.resi:
             try:
@@ -436,7 +502,7 @@ def main(argv=sys.argv[1:]):
             ax.set_zticks(ticks=ticks)
             ax.set(xlim=(lower, upper), ylim=(lower, upper), zlim=(lower, upper))
 
-        def submit(expression):
+        def submit(expression, minpop=0):
             global current_plot
             current_plot = expression
 
@@ -463,10 +529,13 @@ def main(argv=sys.argv[1:]):
 
 
             """ Get (X,Y,Z) unique grid coordinates for TRAJ1"""
-            grids1 = atomic_grid_uniq[atomic_grid_keys[current_plot]]
+            grids1 = tuple(map(tuple, atomic_grid_uniq[atomic_grid_keys[current_plot]]))
             """ Get (X,Y,Z) unique grid coordinates for TRAJ2"""
-            grids2 = atomic_grid_2_uniq[atomic_grid_keys_2[current_plot]]
+            grids2 = tuple(map(tuple, atomic_grid_2_uniq[atomic_grid_keys_2[current_plot]]))
             """ Have to keep order, so can't use sets with intersections etc. """
+
+
+
             grids1_unq = [grid for grid in grids1 if grid not in grids2]  # Coords where only grids 1 reside
             grids2_unq = [grid for grid in grids2 if grid not in grids1]  # Coords where only grids 2 reside
             grids_intersect = [grid for grid in grids1 if grid in grids2]  # Intersection of the two
@@ -523,7 +592,7 @@ def main(argv=sys.argv[1:]):
         ### TEST
         print('Will perform a scan for an optimal value of --grid parameter. This may take a while.')
         fig, axs = plt.subplots()
-        for gridsize in [3, 2, 1.5, 1, 0.5, 0.25]:
+        for gridsize in [3, 2, 1.5, 1, 0.5, 0.25, 0.10]:
             args.grid = gridsize
             atomic_grid = grid(vectors1)
             atomic_grid_uniq, grid_count = return_unique(atomic_grid)
@@ -550,6 +619,12 @@ def main(argv=sys.argv[1:]):
 
             rms = grid_rms(atomic_grid_uniq, atomic_grid_2_uniq, grid_count, grid_count_2)
 
+            rms_out = pd.Series(rms).T
+
+
+
+
+
             rms_keys = list(rms.keys())
 
             x = [x for x in range(0, len(rms_keys))]
@@ -558,6 +633,12 @@ def main(argv=sys.argv[1:]):
                 y.append(rms[key])
 
             norm_y1 = [float(i) / max(y) for i in y]
+
+            rms_out = pd.Series(norm_y1).T
+            rms_out = pd.DataFrame(rms_out, columns=[f'{traj1_name}/{traj2_name}'])
+            rms_out.to_csv(f'{args.o}/{args.o}_grid_g{args.grid}_p{args.pop_threshold}.csv')
+
+
             axs.set_xlabel('Atom #')
             axs.set_ylabel('Apparent RMS / grid units^2')
             axs.set_title(f'norm. appRMS with --grid {args.grid}')

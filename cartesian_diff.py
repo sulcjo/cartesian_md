@@ -1,5 +1,13 @@
 import sys, argparse, os
-import json
+# ujson is recommended but not needed, speeds up json vectors loading
+try:
+    import ujson as json
+except ImportError:
+    try:
+        import simplejson as json
+    except ImportError:
+        import json
+
 import numpy as np
 import pandas as pd
 from alive_progress import alive_bar

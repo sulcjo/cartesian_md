@@ -286,7 +286,7 @@ def main(argv=sys.argv[1:]):
         vectors = get_vectors(x_cart, y_cart, z_cart, x_com, y_com, z_com)
     else:
         print('######')
-        print('(!!) Using SSAP aligned trajectories instead of COM fitting')
+        print('(!!) Using (possibly SSAP) aligned trajectories instead of COM fitting')
         print('######')
         vectors = get_vectors(x_cart, y_cart, z_cart)
 
