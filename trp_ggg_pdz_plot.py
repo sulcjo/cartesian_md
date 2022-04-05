@@ -458,8 +458,6 @@ def plot_angles_chi(dataset_array, title='', plot='scatter', corr=False, rama=Fa
             col += 1
         plt.suptitle(title)
 
-
-
 def obtain_dataset_array(path):
 
     dataset_array = []
@@ -566,6 +564,141 @@ def get_rdf_time(path, filename_contain='cn_rdf.xvg', index = 2.5):
                 dataset_at_index[1].append(y)
     return(dataset_at_index)
 
+def get_gmxmmpbsa_dataset(path):
+
+    with open(path) as datafile:
+        lines = datafile.readlines()
+
+        # Split into parts (PB + GB)
+        reading_pb = False
+        reading_gb = False
+        reading_diff = False
+        pb_total, pb_total_std, gb_total, gb_total_std = None,None,None,None
+
+        for line in lines:
+            if 'GENERALIZED BORN' in line:
+                reading_gb = True
+            elif 'POISSON BOLTZMANN' in line:
+                reading_pb = True
+            elif 'Delta' in line:
+                reading_diff = True
+
+            if reading_pb and reading_diff and 'TOTAL' in line:
+                pb_total = line.split()[2]
+                pb_total_std = line.split()[3]
+                reading_pb = False
+                reading_diff = False
+            elif reading_gb and reading_diff and 'TOTAL' in line:
+                gb_total = line.split()[1]
+                gb_total_std = line.split()[2]
+                reading_gb = False
+                reading_diff = False
+
+
+    return ({'binding': gb_total, 'bindinge': gb_total_std})
+
+    #self.datasets[f'{dataset_name}_pb'] = {'binding': pb_total, 'bindinge': pb_total_std}
+    #self.datasets[f'{dataset_name}_gb'] = {'binding': gb_total, 'bindinge': gb_total_std}
+def plot_mmpbsa(dataset_array, dataset = 'gmxmmpbsa_gb', modelIndexes = None, title = ''):
+
+    def add_value_labels(ax, spacing=5):
+        """Add labels to the end of each bar in a bar chart.
+
+        Arguments:
+            ax (matplotlib.axes.Axes): The matplotlib object containing the axes
+                of the plot to annotate.
+            spacing (int): The distance between the labels and the bars.
+        """
+
+        # For each bar: Place a label
+        for rect, variant, error in zip(ax.patches, variants_plotted, binding_energies_errors):
+            # Get X and Y placement of label from rect.
+            y_value = rect.get_height()
+            x_value = rect.get_x() + rect.get_width() / 2
+
+            # Number of points between bar and label. Change to your liking.
+            space = 15
+            # Vertical alignment for positive values
+            va = 'bottom'
+
+            # If value of bar is negative: Place label below bar
+            if y_value < 0:
+                # Invert space to place label below
+                space *= -1
+                # Vertically align label at top
+                va = 'top'
+
+            # Use Y value as label and format number with one decimal place
+            label = "{:.1f}".format(y_value)
+            error_label = "{:.1f}".format(error)
+
+            # Create annotation
+            ax.annotate(
+                str(variant) + " : \n" + label + " +/- \n" + str(error_label),  # Use `label` as label
+                (x_value, y_value),  # Place label at end of the bar
+                fontsize=18,
+                xytext=(0, space),  # Vertically shift label by `space`
+                textcoords="offset points",  # Interpret `xytext` as offset in points
+                ha='center',  # Horizontally center label
+                va=va)  # Vertically align label differently for
+            # positive and negative values.
+
+        # Call the function above. All the magic happens there.
+
+    binding_energies = []
+    binding_energies_errors = []
+
+    variants_plotted = []
+    clrs = []
+
+    for index in modelIndexes:
+
+        # Types: gmmpbsa, gmxmmpbsa_pb, gmxmmpbsa_gb
+
+        variant_dataset = dataset_array[index]
+        binding_energy = float(variant_dataset['binding'])
+        binding_error = float(variant_dataset['bindinge'])
+
+        binding_energies.append(binding_energy)
+        binding_energies_errors.append(binding_error)
+        variants_plotted.append(index)
+
+        if binding_energy + binding_error < 0 and binding_energy - binding_error < 0:
+            clrs.append("g")
+        elif binding_energy + binding_error > 0 and binding_energy - binding_error > 0:
+            clrs.append('r')
+        else:
+            clrs.append('y')
+
+
+    fig, ax = plt.subplots(figsize=(20,15))
+    ax.bar(variants_plotted, binding_energies, color=clrs, yerr=binding_energies_errors, alpha=0.8, capsize=4,
+            width=0.5, align='edge')
+    plt.xticks(variants_plotted)
+
+    ax.set_ylabel(r"$\Delta$G  / kcal/mol ", size=16)
+    ax.set_title(f"{title}", size=18)
+    ax.yaxis.grid(True)
+    y_ticks = ax.get_yticks()
+    ax.set_yticklabels(labels=y_ticks, fontsize=16)
+    ax.set_xticklabels([])
+    # plt.tight_layout()
+    add_value_labels(ax)
+    legend_entries = {'> 0': 'r', '?': 'y', '< 0': 'g'}
+    labels = list(legend_entries.keys())
+    handles = [plt.Rectangle((0, 0), 1, 1, color=legend_entries[label]) for label in labels]
+    plt.legend(handles, labels, fontsize=16, loc='upper right')
+
+
+mmgbsa_arrays = [{'bla':'ble'}]
+base_path = '/run/timeshift/backup/IOCB/docking/FDs/jama_12_md/fd3'
+for i in range(1,11):
+    mmgbsa_arrays.append(get_gmxmmpbsa_dataset(f'{base_path}/model_{i}/FINAL_RESULTS_MMPBSA.dat'))
+print(mmgbsa_arrays)
+
+plot_mmpbsa(mmgbsa_arrays, modelIndexes=[1,2,3,4,5,6,7,8,9,10], title='FD3A+JAMA-12\n1999 frames MM/GB(8)SA')
+plt.show()
+
 
 #base_path = '/run/timeshift/backup/IOCB/md/trp_gggggg_pdz_closed_i/chi/pyplot/'
 #base_path_corr = '/run/timeshift/backup/IOCB/md/trp_gggggg_pdz_closed_i/chi/corrs/pyplot/'
@@ -587,39 +720,45 @@ def get_rdf_time(path, filename_contain='cn_rdf.xvg', index = 2.5):
 """
 """
 # Load umbrella contacts, histograms and pmf curve
-us_contacts = get_simple_dataset('/run/media/sulcjo/sulcjo-data/IOCB/md/umbrella/cluster5/cluster5/wham_results/contacts_pulling.xvg')
-pmf_curve = get_umbrella_profile('/run/media/sulcjo/sulcjo-data/IOCB/md/umbrella/cluster5/cluster5/wham_results/profile_errors.xvg')
-pmf_histograms = get_umbrella_histogram('/run/media/sulcjo/sulcjo-data/IOCB/md/umbrella/cluster5/cluster5/wham_results/histo.xvg')
-solvation_curve_25 = get_rdf_time('/run/media/sulcjo/sulcjo-data/IOCB/md/umbrella/cluster5/cluster5/wham_results/', index=2.0)
+us_contacts = get_simple_dataset('/run/timeshift/backup/IOCB/md/FDs/umbrella/centroids_comparison/fd4a_2/wham_results/contacts_pulling.xvg')
+pmf_curve = get_umbrella_profile('/run/timeshift/backup/IOCB/md/FDs/umbrella/centroids_comparison/fd4a_2/wham_results/profile_errors.xvg')
+pmf_histograms = get_umbrella_histogram('/run/timeshift/backup/IOCB/md/FDs/umbrella/centroids_comparison/fd4a_2/wham_results/histo.xvg')
+#solvation_curve_25 = get_rdf_time('/run/media/sulcjo/sulcjo-data/IOCB/md/umbrella/cluster5/cluster5/wham_results/', index=2.0)
 
 ## Plot US
+convergence_lowlim=2.6
+convergence_highlim=4.5
+converged_vals = [val for i,val in enumerate(pmf_curve[1]) if convergence_highlim < float(pmf_curve[0][i]) > convergence_lowlim ]
+print(np.mean(converged_vals))
 
-fig_us, axs_us = plt.subplots(nrows=4, ncols=1, gridspec_kw={'height_ratios' : [3,2,1,2]})
+fig_us, axs_us = plt.subplots(nrows=3, ncols=1, gridspec_kw={'height_ratios' : [3,2,2]})
 setLineColor = 'blue'
 setFontSizeLarge = 18
 setFontSizeMedium = 14
 
 axs_us[0].errorbar(pmf_curve[0], pmf_curve[1], yerr=pmf_curve[2], capsize=5, ecolor='black',color=setLineColor)
-axs_us[0].set_title('PMF Curve for Cluster5 TrpCage-GGGGGG-PDZ3 pulling', fontsize=setFontSizeLarge)
+axs_us[0].set_title('PMF Curve for FD4A representative cut II', fontsize=setFontSizeLarge)
 axs_us[0].set_ylabel('PMF / kJ/mol', fontsize=setFontSizeMedium)
 
 
-axs_us[1].scatter(solvation_curve_25[0],solvation_curve_25[1])
-axs_us[1].set_title('SOL molecules around com of TrpCage vs time @ r=2.0 nm')
-axs_us[1].set_ylabel('SOL molecules')
-rdf_time = pd.DataFrame(solvation_curve_25[1]).rolling(30).mean()
-axs_us[1].plot(solvation_curve_25[0],rdf_time)
+#axs_us[1].scatter(solvation_curve_25[0],solvation_curve_25[1])
+#axs_us[1].set_title('SOL molecules around com of TrpCage vs time @ r=2.0 nm')
+#axs_us[1].set_ylabel('SOL molecules')
+#rdf_time = pd.DataFrame(solvation_curve_25[1]).rolling(30).mean()
+#axs_us[1].plot(solvation_curve_25[0],rdf_time)
 
 for run in pmf_histograms[1]:
-    axs_us[2].plot(pmf_histograms[0], run, color=setLineColor)
-axs_us[2].set_title('Histograms', fontsize=setFontSizeLarge)
-axs_us[2].set_ylabel('Counts', fontsize=setFontSizeMedium)
-axs_us[2].set_xlabel('COM-COM distance / nm', fontsize=setFontSizeMedium)
+    axs_us[1].plot(pmf_histograms[0], run, color=setLineColor)
+axs_us[1].set_title('Histograms', fontsize=setFontSizeLarge)
+axs_us[1].set_ylabel('Counts', fontsize=setFontSizeMedium)
+axs_us[1].set_xlabel('COM-COM distance / nm', fontsize=setFontSizeMedium)
 
-axs_us[3].plot(us_contacts[0], us_contacts[1], color=setLineColor)
-axs_us[3].set_title('< 0.6 nm contacts', fontsize=setFontSizeLarge)
-axs_us[3].set_xlabel('Time / ns', fontsize=setFontSizeMedium)
-axs_us[3].set_ylabel('Count', fontsize=setFontSizeMedium)
+axs_us[2].plot(us_contacts[0], us_contacts[1], color=setLineColor)
+axs_us[2].set_title('< 0.6 nm contacts', fontsize=setFontSizeLarge)
+axs_us[2].set_xlabel('Time / ns', fontsize=setFontSizeMedium)
+axs_us[2].set_ylabel('Count', fontsize=setFontSizeMedium)
+"""
+"""
 """
 
 #plot_3D_scatter(rama, angle_coloring=True, title='Linker (TrpCage-GGGGGG-PDZ3)', limit_resi=(24,30))
@@ -794,9 +933,98 @@ axs_12[0][1].set_xlabel('COM-COM dist. D1-3 / nm')
 axs_12[0][1].legend()
 
 """
-
+"""
 base_path = '/run/timeshift/backup/IOCB/MSM/'
-runs = [f'run_{i}' for i in range(1,20)]
+
+rmsf_dataset_pdz = []
+rmsf_dataset_fd3a = []
+rmsf_dataset_fd4a = []
+rmsf_dataset_pdz_amber = []
+rmsf_dataset_fd3a_amber = []
+rmsf_dataset_fd4a_amber = []
+
+for run in [f'run_{i}' for i in range(1,19)]:
+    new_dataset_pdz = get_simple_dataset(f'{base_path}/pdz/charmm_chwater/analyses/complexrmsf_{run}.xvg')
+    new_dataset_fd3a = get_simple_dataset(f'{base_path}/pdz_l_trp/analyses_pdz/pdzrmsf_{run}.xvg')
+    new_dataset_fd4a = get_simple_dataset(f'{base_path}/trp_l_pdz_closed/analyses_pdz/pdzrmsf_{run}.xvg')
+
+    rmsf_dataset_pdz.append(new_dataset_pdz[1])
+    rmsf_dataset_fd3a.append(new_dataset_fd3a[1])
+    rmsf_dataset_fd4a.append(new_dataset_fd4a[1])
+rmsf_dataset_pdz_df = pd.DataFrame(rmsf_dataset_pdz)
+rmsf_dataset_fd3a_df = pd.DataFrame(rmsf_dataset_fd3a)
+rmsf_dataset_fd4a_df = pd.DataFrame(rmsf_dataset_fd4a)
+
+
+for run in [f'run_{i}' for i in range(20,29)]:
+    new_dataset_pdz_amber = get_simple_dataset(f'{base_path}/pdz_amber/analyses/complexrmsf_{run}.xvg')
+    new_dataset_fd3a_amber = get_simple_dataset(f'{base_path}/pdz_l_trp_amber/analyses_pdz/pdzrmsf_{run}.xvg')
+    new_dataset_fd4a_amber = get_simple_dataset(f'{base_path}/trp_l_pdz_closed_amber/analyses_pdz/pdzrmsf_{run}.xvg')
+
+    rmsf_dataset_pdz_amber.append(new_dataset_pdz[1])
+    rmsf_dataset_fd3a_amber.append(new_dataset_fd3a[1])
+    rmsf_dataset_fd4a_amber.append(new_dataset_fd4a[1])
+rmsf_dataset_pdz_df = pd.DataFrame(rmsf_dataset_pdz)
+rmsf_dataset_fd3a_df = pd.DataFrame(rmsf_dataset_fd3a)
+rmsf_dataset_fd4a_df = pd.DataFrame(rmsf_dataset_fd4a)
+
+rmsf_dataset_pdz_amber_df = pd.DataFrame(rmsf_dataset_pdz_amber)
+rmsf_dataset_fd3a_amber_df = pd.DataFrame(rmsf_dataset_fd3a_amber)
+rmsf_dataset_fd4a_amber_df = pd.DataFrame(rmsf_dataset_fd4a_amber)
+
+
+atoms = [i for i in range(1, len(rmsf_dataset_pdz[0]))]
+fig, axs = plt.subplots(ncols=2, nrows=4, figsize=(20,15), sharex='all', gridspec_kw={'height_ratios': [4, 1, 1, 1 ]})
+axs[0][0].set_title('CHARMM36m average RMSF from 20x 400 ns run')
+axs[0][0].plot(rmsf_dataset_pdz_df.mean(), label='PDZ3')
+axs[0][0].plot(rmsf_dataset_fd3a_df.mean(), label='FD3A')
+axs[0][0].plot(rmsf_dataset_fd4a_df.mean(), label='FD4A')
+axs[0][0].legend()
+
+
+delta_fd3a_pdz = rmsf_dataset_fd3a_df.mean() - rmsf_dataset_pdz_df.mean()
+axs[1][0].set_title('d(FD3A - PDZ3) CHARMM36m')
+axs[1][0].plot(delta_fd3a_pdz)
+
+delta_fd4a_pdz = rmsf_dataset_fd4a_df.mean() - rmsf_dataset_pdz_df.mean()
+axs[2][0].set_title('d(FD4A - PDZ3) CHARMM36m')
+axs[2][0].plot(delta_fd4a_pdz)
+
+
+delta_fd43a_pdz = rmsf_dataset_fd4a_df.mean() - rmsf_dataset_fd3a_df.mean()
+axs[3][0].set_title('d(FD4A - FD3A) CHARMM36m')
+axs[3][0].plot(delta_fd43a_pdz)
+axs[3][0].set_xlabel('atom')
+
+
+
+
+
+axs[0][1].set_title('SB99-ILDN average RMSF from 20x 400 ns run')
+axs[0][1].plot(rmsf_dataset_pdz_amber_df.mean(), label='PDZ3')
+axs[0][1].plot(rmsf_dataset_fd3a_amber_df.mean(), label='FD3A')
+axs[0][1].plot(rmsf_dataset_fd4a_amber_df.mean(), label='FD4A')
+axs[0][1].legend()
+
+delta_fd3a_pdz_amber = rmsf_dataset_fd3a_amber_df.mean() - rmsf_dataset_pdz_amber_df.mean()
+axs[1][1].set_title('d(FD3A - PDZ3) SB99-ILDN')
+axs[1][1].plot(delta_fd3a_pdz_amber)
+
+delta_fd4a_pdz_amber = rmsf_dataset_fd4a_amber_df.mean() - rmsf_dataset_pdz_amber_df.mean()
+axs[2][1].set_title('d(FD4A - PDZ3) SB99-ILDN')
+axs[2][1].plot(delta_fd4a_pdz_amber)
+
+delta_fd43a_pdz_amber = rmsf_dataset_fd4a_amber_df.mean() - rmsf_dataset_fd3a_amber_df.mean()
+axs[3][1].set_title('d(FD4A - FD3A) SB99-ILDN')
+axs[3][1].set_xlabel('atom')
+axs[3][1].plot(delta_fd43a_pdz_amber)
+
+plt.show()
+
+
+
+
+runs = [f'run_{i}' for i in range(20,29)]
 rg_dataset_pdz = []
 sasa_dataset_pdz = []
 rg_dataset_pdzltrp = []
@@ -805,14 +1033,14 @@ rg_dataset_trplpdz = []
 sasa_dataset_trplpdz = []
 
 for run in runs:
-    rg_dataset_pdz.append(get_simple_dataset(f'{base_path}pdz/analyses/rg_{run}.xvg')[1])
-    sasa_dataset_pdz.append(get_simple_dataset(f'{base_path}pdz/analyses/sasa_{run}.xvg')[1])
+    rg_dataset_pdz.append(get_simple_dataset(f'{base_path}pdz_amber/analyses/complexgyrate_{run}.xvg')[1])
+    sasa_dataset_pdz.append(get_simple_dataset(f'{base_path}pdz_amber/analyses/complexsasa_{run}.xvg')[1])
 
-    rg_dataset_pdzltrp.append(get_simple_dataset(f'{base_path}pdz_l_trp/analyses_pdz/pdzgyrate_{run}.xvg')[1])
-    sasa_dataset_pdzltrp.append(get_simple_dataset(f'{base_path}pdz_l_trp/analyses_pdz/pdzsasa_{run}.xvg')[1])
+    rg_dataset_pdzltrp.append(get_simple_dataset(f'{base_path}pdz_l_trp_amber/analyses/complexgyrate_{run}.xvg')[1])
+    sasa_dataset_pdzltrp.append(get_simple_dataset(f'{base_path}pdz_l_trp_amber/analyses/complexsasa_{run}.xvg')[1])
 
-    rg_dataset_trplpdz.append(get_simple_dataset(f'{base_path}trp_l_pdz_closed/analyses_pdz/pdzgyrate_{run}.xvg')[1])
-    sasa_dataset_trplpdz.append(get_simple_dataset(f'{base_path}trp_l_pdz_closed/analyses_pdz/pdzsasa_{run}.xvg')[1])
+    rg_dataset_trplpdz.append(get_simple_dataset(f'{base_path}trp_l_pdz_closed_amber/analyses/complexgyrate_{run}.xvg')[1])
+    sasa_dataset_trplpdz.append(get_simple_dataset(f'{base_path}trp_l_pdz_closed_amber/analyses/complexsasa_{run}.xvg')[1])
 
 fig, axs = plt.subplots(ncols=3, figsize=(20,15))
 
@@ -844,9 +1072,9 @@ areas_pdz = list(map(lambda x: np.round(x, decimals=2), areas_pdz))
 areas_pdzltrp = list(map(lambda x: np.round(x, decimals=2), areas_pdzltrp))
 areas_trplpdz = list(map(lambda x: np.round(x, decimals=2), areas_trplpdz))
 
-print(f'Areas PDZ3 {areas_pdz} , AVG {np.round(np.mean(areas_pdz), decimals=3)} +- STD{np.round(np.std(areas_pdz), decimals=3)} (nm^3)\n')
-print(f'Areas PDZ3-l-TrpCage {areas_pdzltrp} , {np.round(np.mean(areas_pdzltrp), decimals=3)} +- STD{np.round(np.std(areas_pdzltrp), decimals=3)} (nm^3)\n')
-print(f'Areas TrpCage-l-PDZ3 {areas_trplpdz} , {np.round(np.mean(areas_trplpdz), decimals=3)} +- STD{np.round(np.std(areas_trplpdz), decimals=3)} (nm^3)\n')
+print(f'Areas PDZ3 (SB99-ILDN)  {areas_pdz} , AVG {np.round(np.mean(areas_pdz), decimals=3)} +- STD{np.round(np.std(areas_pdz), decimals=3)} (nm^3)\n')
+print(f'Areas PDZ3-l-TrpCage (SB99-ILDN) {areas_pdzltrp} , {np.round(np.mean(areas_pdzltrp), decimals=3)} +- STD{np.round(np.std(areas_pdzltrp), decimals=3)} (nm^3)\n')
+print(f'Areas TrpCage-l-PDZ3 (SB99-ILDN) {areas_trplpdz} , {np.round(np.mean(areas_trplpdz), decimals=3)} +- STD{np.round(np.std(areas_trplpdz), decimals=3)} (nm^3)\n')
 
 
 
@@ -854,12 +1082,12 @@ print(f'Areas TrpCage-l-PDZ3 {areas_trplpdz} , {np.round(np.mean(areas_trplpdz),
 #axs[1].legend(loc='upper right')
 #axs[2].legend(loc='upper right')
 
-for ax in axs:
-    ax.set(xlim=(1.15, 1.30), ylim=(46, 60))
+#for ax in axs:
+    #ax.set(xlim=(1.15, 1.30), ylim=(46, 60))
 
-axs[0].set_title('PDZ3')
-axs[1].set_title('FD3A (PDZ3 only)')
-axs[2].set_title('FD4A (PDZ3 only)')
+axs[0].set_title('PDZ3 (SB99-ILDN)')
+axs[1].set_title('FD3A (SB99-ILDN)')
+axs[2].set_title('FD4A (SB99-ILDN)')
 
 axs[0].set_xlabel('R(g) / nm')
 axs[0].set_ylabel('SASA / nm^2')
@@ -867,6 +1095,46 @@ axs[1].set_xlabel('R(g) / nm')
 axs[1].set_ylabel('SASA / nm^2')
 axs[2].set_xlabel('R(g) / nm')
 axs[2].set_ylabel('SASA / nm^2')
+
+"""
+
+base_path='/run/timeshift/backup/IOCB/docking/FDs/jama_12_md/fd3'
+rmsd_datasets = []
+distance_histograms = []
+
+for model in range(1,11):
+    rmsd_datasets.append(get_simple_dataset(f'{base_path}/ligand_rms_model_{model}.xvg'))
+    distance_histograms.append(get_simple_dataset(f'{base_path}/histogram_complex_distance_model_{model}.xvg'))
+###
+fig = plt.figure(figsize=(20,15))
+cols = 3
+rows = math.ceil(len(rmsd_datasets)/cols)
+for i, dataset in enumerate(rmsd_datasets):
+    ax = plt.subplot(rows, cols, i+1)
+    ax.plot(dataset[0], dataset[1])
+    ax.set_title(f'FD3A+JAMA-12\nJAMA-12 backbone, model_{i+1}')
+    ax.set_xlabel('Time / ps')
+    ax.set_ylabel('RMSD / nm')
+
+fig.tight_layout()
+plt.subplots_adjust(hspace=0.7)
+
+###
+
+fig = plt.figure(figsize=(20,15))
+
+cols = 3
+rows = math.ceil(len(distance_histograms)/cols)
+for i, dataset in enumerate(distance_histograms):
+    ax = plt.subplot(rows, cols, i+1)
+    ax.plot(dataset[0], dataset[1])
+    ax.set_title(f'FD3A+JAMA-12\nCOM-COM distance, model_{i+1}')
+    ax.set_xlabel('d / nm')
+    ax.set_ylabel('frequency')
+    ax.set(xlim=(1,4.0))
+fig.tight_layout()
+plt.subplots_adjust(hspace=0.7)
+plt.show()
 
 
 """

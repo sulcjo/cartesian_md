@@ -15,6 +15,8 @@ import numpy as np
 import math
 import matplotlib
 matplotlib.use('qtagg')
+import seaborn as sb
+from matplotlib.ticker import (AutoMinorLocator, MultipleLocator)
 try:
     import multiprocessing as mp
     multiprocess = True
@@ -65,9 +67,6 @@ def atom_atomic_grids_asynch(key):
     return_dict[key] = tuple(new_grids)
 
     return (return_dict)
-
-
-
 
 def grid(vectors):
     vectors_keys = list(vectors.keys())
@@ -144,6 +143,72 @@ def grid(vectors):
     grid_pop_vectors = scan_through_grid(vectors)
 
     return(grid_pop_vectors)
+
+
+def parse_violin(start, stop, vectors1, traj1_name, vectors2=False, traj2_name=False):
+    violin_df = pd.DataFrame()
+    vector1_keys = list(vectors1.keys())
+
+
+    coords = []
+    datapoint_id = []
+    axis_id = []
+    traj_id = []
+    atom_id = []
+
+    # Fix later to index by vector2_keys
+
+    for atom in vector1_keys[start:stop]:
+        coords.append([x[0] for x in vectors1[atom]])
+        datapoint_id.append(np.repeat(f'{atom}_x', len(vectors1[atom])))
+        axis_id.append(np.repeat('x', len(vectors1[atom])))
+        traj_id.append(np.repeat(traj1_name, len(vectors1[atom])))
+        atom_id.append(np.repeat(atom, len(vectors1[atom])))
+
+        if args.s:
+            coords.append([x[0] for x in vectors2[atom]])
+            datapoint_id.append(np.repeat(f'{atom}_x', len(vectors2[atom])))
+            axis_id.append(np.repeat('x', len(vectors2[atom])))
+            traj_id.append(np.repeat(traj2_name, len(vectors2[atom])))
+            atom_id.append(np.repeat(atom, len(vectors2[atom])))
+
+        coords.append([y[1] for y in vectors1[atom]])
+        datapoint_id.append(np.repeat(f'{atom}_y', len(vectors1[atom])))
+        axis_id.append(np.repeat('y', len(vectors1[atom])))
+        traj_id.append(np.repeat(traj1_name, len(vectors1[atom])))
+        atom_id.append(np.repeat(atom, len(vectors1[atom])))
+        if args.s:
+            coords.append([y[1] for y in vectors2[atom]])
+            datapoint_id.append(np.repeat(f'{atom}_y', len(vectors2[atom])))
+            axis_id.append(np.repeat('y', len(vectors2[atom])))
+            traj_id.append(np.repeat(traj2_name, len(vectors2[atom])))
+            atom_id.append(np.repeat(atom, len(vectors2[atom])))
+
+        coords.append([z[2] for z in vectors1[atom]])
+        datapoint_id.append(np.repeat(f'{atom}_z', len(vectors1[atom])))
+        axis_id.append(np.repeat('z', len(vectors1[atom])))
+        traj_id.append(np.repeat(traj1_name, len(vectors1[atom])))
+        atom_id.append(np.repeat(atom, len(vectors1[atom])))
+        if args.s:
+            coords.append([z[2] for z in vectors2[atom]])
+            datapoint_id.append(np.repeat(f'{atom}_z', len(vectors2[atom])))
+            axis_id.append(np.repeat('z', len(vectors2[atom])))
+            traj_id.append(np.repeat(traj2_name, len(vectors2[atom])))
+            atom_id.append(np.repeat(atom, len(vectors2[atom])))
+
+    coords = [item for sublist in coords for item in sublist]  # flatten the coords list
+    datapoint_id = [item for sublist in datapoint_id for item in sublist]
+    axis_id = [item for sublist in axis_id for item in sublist]
+    traj_id = [item for sublist in traj_id for item in sublist]
+    atom_id = [item for sublist in atom_id for item in sublist]
+
+    violin_df['coords'] = coords
+    violin_df['datapoint_id'] = datapoint_id
+    violin_df['axis_id'] = axis_id
+    violin_df['traj_id'] = traj_id
+    violin_df['atom_id'] = atom_id
+
+    return (violin_df)
 
 def return_unique(grid_pop_vectors):
     grid_keys = list(grid_pop_vectors.keys())
@@ -290,10 +355,11 @@ def main(argv=sys.argv[1:]):
     #parser.add_argument('--threshold', type=int, help='Threshold in gridpoints for perturbation detection, defaults to 1', required=False, default=1)
     parser.add_argument('--o', type=str, help='Output directory, defaults to names of trajectories used separated by _', required=False)
     parser.add_argument('--pdbs', type=str, help='OPTIONAl .pdb file to generate rms-based coloring', required=False, default=False)
-    parser.add_argument('--plot', type=str, help='OPTIONAL plot results in a 3D-plot', required=False, default=False)
+    parser.add_argument('--plot', type=str, help='OPTIONAL plot results in a 3D-plot', required=False, default=True)
     parser.add_argument('--pop_threshold', type=int, help='Bins with populations lower than this will be disregarded for plotting, defaults to 10 (good for throwing away SSAP caused artefacts)', required=False, default=10)
     parser.add_argument('--resi', type=str, help='Residue assignment (for plotting)', required=False, default=False)
     parser.add_argument('--mp', type=int, help='Nthreads to use for calculations, defaults to 1', required=False, default=False)
+    parser.add_argument('--plot_positions', type=str, help='OPTIONAL plot positional violin plots', required=False, default=True)
     global args
     args = parser.parse_args(argv)
 
@@ -306,23 +372,31 @@ def main(argv=sys.argv[1:]):
             args.o = f'{traj1_name}_{traj2_name}'
         else:
             args.o = traj1_name
-
     if not os.path.exists(args.o):
         os.makedirs(args.o)
     ###
 
-    # Load vectors generated by cartesian.py
+    # Load --f vectors generated by cartesian.py
     try:
         with open(args.f) as file:
 
             vectors1 = json.load(file)
-        with open(args.s) as file:
-
-            vectors2 = json.load(file)
     except FileNotFoundError:
-        print(f'No {args.f} or {args.s} found, will quit')
+        print(f'No {args.f} found, will quit')
         exit()
     ###
+
+    # OPTIONAL load --s vectors generated by cartesian.py, or ignore if not found
+    if args.s:
+        try:
+            with open(args.s) as file:
+
+                vectors2 = json.load(file)
+        except FileNotFoundError:
+            print(f'No {args.s} found, will ignore and proceed only with {args.f}. RMS metric will NOT be calculated and 3D-position plots will NOT be made.')
+            args.s=False
+    ###
+
     if args.method == 'grid':
 
         """
@@ -339,28 +413,30 @@ def main(argv=sys.argv[1:]):
          """
 
         atomic_grid = grid(vectors1)
-        atomic_grid_2 = grid(vectors2)
-
-
-
         atomic_grid_uniq, grid_count = return_unique(atomic_grid)
-        atomic_grid_2_uniq, grid_count_2 = return_unique(atomic_grid_2)
-
-
-
         # Calculate original points amount
         vector1_keys = list(vectors1.keys())
         vectors_num = sum([len(vectors1[key]) for key in vector1_keys])
-
-        # Calculate the total amount of gridpoints in both datasets
+        # Calculate the total amount of gridpoints in the first datasets
         grid1_keys = list(atomic_grid.keys())
-        grid2_keys = list(atomic_grid.keys())
         grid1_size = sum([len(atomic_grid[i]) for i in grid1_keys])
-        grid2_size = sum([len(atomic_grid[i]) for i in grid2_keys])
-
         # Calculate total amount of unique gridpoints
         grid1_unq_size = sum([len(atomic_grid_uniq[i]) for i in grid1_keys])
-        grid2_unq_size = sum([len(atomic_grid_2_uniq[i]) for i in grid2_keys])
+
+        if args.s:
+            atomic_grid_2 = grid(vectors2)
+            atomic_grid_2_uniq, grid_count_2 = return_unique(atomic_grid_2)
+            grid2_keys = list(atomic_grid.keys())
+            grid2_size = sum([len(atomic_grid[i]) for i in grid2_keys])
+            grid2_unq_size = sum([len(atomic_grid_2_uniq[i]) for i in grid2_keys])
+            rms = grid_rms(atomic_grid_uniq, atomic_grid_2_uniq, grid_count, grid_count_2)
+            rms_out = pd.Series(rms).T
+            rms_out = pd.DataFrame(rms_out, columns=[f'{traj1_name}/{traj2_name}'])
+            rms_out.to_csv(f'{args.o}/{args.o}_grid_g{args.grid}_p{args.pop_threshold}.csv')
+        else:
+            grid2_size = 0
+            grid2_unq_size = 0
+
 
         print(f'Total amount of vectors {vectors_num*2}')
         print(f'Total amount of gridpoints {grid1_size+grid2_size}')
@@ -372,12 +448,6 @@ def main(argv=sys.argv[1:]):
         #print(int_rms_1)
         #print(int_rms_2)
 
-
-        rms=grid_rms(atomic_grid_uniq, atomic_grid_2_uniq, grid_count, grid_count_2)
-        rms_out=pd.Series(rms).T
-        rms_out=pd.DataFrame(rms_out, columns=[f'{traj1_name}/{traj2_name}'])
-        rms_out.to_csv(f'{args.o}/{args.o}_grid_g{args.grid}_p{args.pop_threshold}.csv')
-
     if args.pdbs:
         print('(!!) Will print B-factors of conformational deltas between the two trajectories in arbitrary units')
         delta = pd.Series(rms)
@@ -388,15 +458,15 @@ def main(argv=sys.argv[1:]):
         with open(f'{args.o}/{args.o}_grid.pdb', 'w') as file:
             file.write(grid_pdb)
 
-    if args.plot.lower == 'true' :
+    if args.plot.lower == 'true' and args.s:
 
         if args.resi:
             try:
                 with open(args.resi) as file:
                     resi_assignment = json.load(file)
             except FileNotFoundError:
-                print(f'{args.resi} not found, will quit.')
-                exit()
+                print(f'{args.resi} not found, will not use.')
+                args.resi=False
 
             residue_keys = list(resi_assignment.keys())
 
@@ -411,34 +481,6 @@ def main(argv=sys.argv[1:]):
         ax = fig.add_subplot(projection='3d')
         plt.subplots_adjust(bottom=0.25)
 
-
-
-        """
-        grids1 = []
-        for agu, agupop in zip(atomic_grid_uniq[atomic_grid_keys[0]], grid_count[atomic_grid_keys[0]]):
-            if agupop > args.pop_threshold:
-                grids1.append(agu)
-        grids2 = []
-        for agu, agupop in zip(atomic_grid_2_uniq[atomic_grid_keys_2[0]], grid_count_2[atomic_grid_keys_2[0]]):
-            if agupop > args.pop_threshold:
-                grids2.append(agu)
-
-
-        #Get (X,Y,Z) unique grid coordinates for TRAJ1
-        #grids1 = atomic_grid_uniq[atomic_grid_keys[0]]
-
-
-        #Get (X,Y,Z) unique grid coordinates for TRAJ2
-        #grids2 = atomic_grid_2_uniq[atomic_grid_keys_2[0]]
-        #Have to keep order, so can't use sets with intersections etc.
-        grids1_unq = [grid for grid in grids1 if grid not in grids2] # Coords where only grids 1 reside
-        grids2_unq = [grid for grid in grids2 if grid not in grids1] # Coords where only grids 2 reside
-        grids_intersect = [grid for grid in grids1 if grid in grids2] # Intersection of the two
-
-        #ax.scatter(xs=xs, ys=ys, zs=zs, s=10, c='blue', marker='s')
-        #ax.scatter(xs=xs2, ys=ys2, zs=zs2, s=20, c='red', marker='x')
-        """
-    
         def plot_cubes(data, color, label):
 
             x_data = [x[0] for x in data]
@@ -505,8 +547,6 @@ def main(argv=sys.argv[1:]):
         def submit(expression, minpop=0):
             global current_plot
             current_plot = expression
-
-
             #print(atomic_grid_uniq[f'atom {current_plot+1}'])
             """
             Update the plotted function to the new math *expression*.
@@ -568,7 +608,6 @@ def main(argv=sys.argv[1:]):
         current_plot = 0
         submit(current_plot)
 
-
         axbox = fig.add_axes([0.3, 0.05, 0.6, 0.075])
         save_axbox = fig.add_axes([0.8, 0.075, 0.2, 0.05])
         save_all_axbox = fig.add_axes([0.8, 0.025, 0.2, 0.05])
@@ -587,6 +626,101 @@ def main(argv=sys.argv[1:]):
 
         # Show
         plt.show()
+
+    if args.plot_positions:
+        """
+        Using non-unique grid data, plot a violin plot to show x,y,z and density positions in a grid using violin plot       
+        
+        """
+        if args.resi:
+            try:
+                with open(args.resi) as file:
+                    resi_assignment = json.load(file)
+                    residue_keys = list(resi_assignment.keys())
+            except FileNotFoundError:
+                print(f'{args.resi} not found, will not use.')
+                args.resi=False
+
+        # text_box = TextBox(axbox, "Atom # / Resi #", textalignment="center")
+        # text_box.on_submit(submit)
+        # text_box.set_val("0")  # Trigger `submit` with the initial string.
+
+        global chunk_size
+        chunk_size = 3
+
+        def plot_violin(indexer):
+            global chunk_size
+            global axs_list
+
+            try:
+                for i in axs_list:
+                    i.remove()
+            except:
+                axs_list = []
+
+
+
+
+
+            # Clean up after previous plot
+
+
+            # catplot is a figure-level function, doesn't accept target axes, can't use it for this usage
+            if args.s:
+                violin_df = parse_violin(chunk_size*indexer, ((chunk_size*indexer)+chunk_size), vectors1=vectors1, traj1_name=traj1_name, vectors2=vectors2, traj2_name=traj2_name) # start from atom 0, end with atom 3 (excluding)
+
+                #order = violin_df['atom_id'].unique()
+                #hue_order = violin_df['traj_id'].unique()
+                #sb.catplot(data=violin_df, x='datapoint_id', y='coords', hue='traj_id', col='atom_id', kind='violin', split='traj_id', sharex=False, inner='quartiles')
+            else:
+                violin_df = parse_violin(chunk_size*indexer, ((chunk_size*indexer)+chunk_size), vectors1=vectors1, traj1_name=traj1_name)
+                #sb.catplot(data=violin_df, x='datapoint_id', y='coords', hue='axis_id', cut=0, inner='quartiles')
+
+            for i, (n, grp) in enumerate(violin_df.groupby("atom_id")):
+                _ = fig.add_subplot(1, chunk_size, i + 1)
+                axs_list.append(_)
+                # 1-row, 3-cols, index
+                # sb.countplot(x="sex", hue="smoker", data=grp,
+                #              order=order, hue_order=hue_order, ax=ax)
+                if args.s:
+                    axs_list[i] = sb.violinplot(x='datapoint_id', y='coords', hue='traj_id', data=grp, split='True', cut=0,
+                                                inner='quartile')
+                else:
+                    axs_list[i] = sb.violinplot(x='datapoint_id', y='coords', hue='axis_id', data=grp, cut=0,
+                                                inner='quartile')
+                axs_list[i].set_title(f"atom = {n}")
+                axs_list[i].get_legend().remove()
+                #axs_list[i].get_xaxis().set_visible(False)
+            axs_list[-1].legend()
+
+
+            plt.draw()
+
+        # Setup the plots
+        fig, axs = plt.subplots()
+        plt.axis('off')
+        sb.set_theme(style="whitegrid")
+        sb.despine(offset=10)
+        plt.subplots_adjust(bottom=0.25)
+
+        axbox = fig.add_axes([0.3, 0.05, 0.6, 0.075])
+        save_axbox = fig.add_axes([0.8, 0.075, 0.2, 0.05])
+        save_all_axbox = fig.add_axes([0.8, 0.025, 0.2, 0.05])
+        slider = Slider(ax=axbox, label='Atom/Residue #', valmin=0, valmax=(len(vector1_keys) / chunk_size) - 1,
+                        valinit=0, valstep=1)
+        slider.on_changed(plot_violin)
+
+        plot_violin(0) # Initial plot
+
+
+        # save_button = Button(ax=save_axbox, label='Save current')
+        # save_button.on_clicked(lambda x: plt.savefig(f'{args.o}/violinplot_atom{current_plot}.png'))
+
+        # save_all_button = Button(ax=save_all_axbox, label='Save all')
+        # save_all_button.on_clicked(save_all)
+
+        plt.show()
+
 
     if args.method == 'grid_scan':
         ### TEST
