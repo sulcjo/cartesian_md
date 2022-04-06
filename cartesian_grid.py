@@ -598,7 +598,7 @@ def main(argv=sys.argv[1:]):
 
             plt.draw()
 
-        def save_all(_):
+        def save_all():
             global current_plot
             for plot in range(0,len(atomic_grid_keys)):
                 submit(plot)
@@ -641,33 +641,36 @@ def main(argv=sys.argv[1:]):
                 print(f'{args.resi} not found, will not use.')
                 args.resi=False
 
-        # text_box = TextBox(axbox, "Atom # / Resi #", textalignment="center")
-        # text_box.on_submit(submit)
-        # text_box.set_val("0")  # Trigger `submit` with the initial string.
+
 
         global chunk_size
         chunk_size = 3
 
         def plot_violin(indexer):
+            indexer = int(indexer)
+
+
             global chunk_size
             global axs_list
 
+            # Clean up after previous plot
             try:
                 for i in axs_list:
                     i.remove()
             except:
                 axs_list = []
 
-
-
-
-
-            # Clean up after previous plot
+            global current_atoms_violin
 
 
             # catplot is a figure-level function, doesn't accept target axes, can't use it for this usage
             if args.s:
                 violin_df = parse_violin(chunk_size*indexer, ((chunk_size*indexer)+chunk_size), vectors1=vectors1, traj1_name=traj1_name, vectors2=vectors2, traj2_name=traj2_name) # start from atom 0, end with atom 3 (excluding)
+                current_atoms_violin_arr = violin_df['atom_id'].unique()
+                current_atoms_violin = ''
+                for atom in current_atoms_violin_arr:
+                    current_atoms_violin += atom
+                current_atoms_violin.replace(' ','_')
 
                 #order = violin_df['atom_id'].unique()
                 #hue_order = violin_df['traj_id'].unique()
@@ -696,8 +699,13 @@ def main(argv=sys.argv[1:]):
 
             plt.draw()
 
+        def save_all_violin(_):
+            for i in range(0, math.ceil(len(vector1_keys)/chunk_size)):
+                plot_violin(i)
+                plt.savefig(f'{args.o}/violinplot_{current_atoms_violin}.png')
+
         # Setup the plots
-        fig, axs = plt.subplots()
+        fig, axs = plt.subplots(figsize=(15,12))
         plt.axis('off')
         sb.set_theme(style="whitegrid")
         sb.despine(offset=10)
@@ -706,18 +714,26 @@ def main(argv=sys.argv[1:]):
         axbox = fig.add_axes([0.3, 0.05, 0.6, 0.075])
         save_axbox = fig.add_axes([0.8, 0.075, 0.2, 0.05])
         save_all_axbox = fig.add_axes([0.8, 0.025, 0.2, 0.05])
+
         slider = Slider(ax=axbox, label='Atom/Residue #', valmin=0, valmax=(len(vector1_keys) / chunk_size) - 1,
                         valinit=0, valstep=1)
         slider.on_changed(plot_violin)
 
+        save_button = Button(ax=save_axbox, label='Save current')
+        save_button.on_clicked(lambda x: plt.savefig(f'{args.o}/violinplot_{current_atoms_violin}.png'))
+
+        save_all_button = Button(ax=save_all_axbox, label='Save all')
+        save_all_button.on_clicked(save_all_violin)
+
+
         plot_violin(0) # Initial plot
 
 
-        # save_button = Button(ax=save_axbox, label='Save current')
-        # save_button.on_clicked(lambda x: plt.savefig(f'{args.o}/violinplot_atom{current_plot}.png'))
 
-        # save_all_button = Button(ax=save_all_axbox, label='Save all')
-        # save_all_button.on_clicked(save_all)
+
+
+
+
 
         plt.show()
 
