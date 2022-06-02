@@ -689,7 +689,7 @@ def plot_mmpbsa(dataset_array, dataset = 'gmxmmpbsa_gb', modelIndexes = None, ti
     handles = [plt.Rectangle((0, 0), 1, 1, color=legend_entries[label]) for label in labels]
     plt.legend(handles, labels, fontsize=16, loc='upper right')
 
-
+"""
 mmgbsa_arrays = [{'bla':'ble'}]
 base_path = '/run/timeshift/backup/IOCB/docking/FDs/jama_12_md/fd3'
 for i in range(1,11):
@@ -699,7 +699,7 @@ print(mmgbsa_arrays)
 plot_mmpbsa(mmgbsa_arrays, modelIndexes=[1,2,3,4,5,6,7,8,9,10], title='FD3A+JAMA-12\n1999 frames MM/GB(8)SA')
 plt.show()
 
-
+"""
 #base_path = '/run/timeshift/backup/IOCB/md/trp_gggggg_pdz_closed_i/chi/pyplot/'
 #base_path_corr = '/run/timeshift/backup/IOCB/md/trp_gggggg_pdz_closed_i/chi/corrs/pyplot/'
 #base_path_ramas = '/run/timeshift/backup/IOCB/md/trp_gggggg_pdz_closed_i/chi/ramas/pyplot/'
@@ -1097,7 +1097,7 @@ axs[2].set_xlabel('R(g) / nm')
 axs[2].set_ylabel('SASA / nm^2')
 
 """
-
+"""
 base_path='/run/timeshift/backup/IOCB/docking/FDs/jama_12_md/fd3'
 rmsd_datasets = []
 distance_histograms = []
@@ -1135,6 +1135,33 @@ for i, dataset in enumerate(distance_histograms):
 fig.tight_layout()
 plt.subplots_adjust(hspace=0.7)
 plt.show()
+"""
+
+def read_dat(path):
+    with open(path) as file:
+        lines = file.readlines()
+    return [line.replace('\n','') for line in lines]
+
+pdz3_cmd = read_dat("/run/media/sulcjo/sulcjo-data/IOCB/docking/FDs/jama_12/jama_12_gamd/pdz_conventional/xtc_trajectory/dat/com_prot_lig.dat")
+pdz3_gamd = read_dat("/run/media/sulcjo/sulcjo-data/IOCB/docking/FDs/jama_12/jama_12_gamd/pdz_bound/xtc_trajectory/dat/com_prot_lig.dat")
+pdz3_pepgamd = read_dat("/run/media/sulcjo/sulcjo-data/IOCB/docking/FDs/jama_12/jama_12_gamd/pdz_pepgamd/xtc_trajectory/dat/com_prot_lig.dat")
+pdz3_hrexgamd = read_dat("/run/media/raid/IOCB_archive/docking/FDs/jama_12/jama_12_gamd/hrexgamd_pdz_jama12_model10/xtc_trajectory/dat/com_prot_lig.dat")
+fd3_gamd = read_dat("/run/media/sulcjo/sulcjo-data/IOCB/docking/FDs/jama_12/jama_12_gamd/fd3_bound/xtc_trajectory/dat/com_prot_lig.dat")
+fd4_gamd = read_dat("/run/media/sulcjo/sulcjo-data/IOCB/docking/FDs/jama_12/jama_12_gamd/fd4_bound/xtc_trajectory/dat/com_prot_lig.dat")
+labels=["PDZ3+JAMA12 MD", "PDZ3+JAMA12 GaMD", "PDZ3+JAMA12 pep-GaMD", "PDZ3+JAMA12 HREX-GaMD", "FD3A+JAMA12 GaMD", "FD4A+JAMA12 GaMD"]
+datasets=[pdz3_cmd, pdz3_gamd, pdz3_pepgamd, pdz3_hrexgamd, fd3_gamd, fd4_gamd]
+fig, axs = plt.subplots(nrows=2, ncols=3)
+col=-1
+row=0
+for data, label in zip(datasets, labels):
+    col += 1
+    if col > 2:
+        col = -1
+        row += 1
+
+    axs[row][col].plot([x for x in range(0, len(data))], [float(y) for y in data], label=label)
+    axs[row][col].legend()
+
 
 
 """
@@ -1190,7 +1217,7 @@ axs.set(xlim=(1.2, 2.8), ylim=(63, 110))
 axs.legend()
 """
 """
-open_i_distance = get_simple_dataset(f'{base_path}trp_gggggg_pdz_open_i/xmgrace/domains_distance_histo.xvg')
+open_i_distance = get_simple_dataset(f'{base_path}trp_gggggg_pdz_open_i/sexmgrace/domains_distance_histo.xvg')
 open_ii_distance = get_simple_dataset(f'{base_path}trp_gggggg_pdz_open_ii/trp_pdz_open_ii/xmgrace/domains_distance_histo.xvg')
 open_amber_distance = get_simple_dataset(f'{base_path}trp_pdz_open_amber/xmgrace/domains_distance_histo.xvg')
 closed_i_distance = get_simple_dataset(f'{base_path}trp_gggggg_pdz_closed_i/xmgrace/domains_distance_histo.xvg')

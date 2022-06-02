@@ -23,6 +23,7 @@ import math
 import matplotlib
 matplotlib.use('qtagg')
 import seaborn as sb
+import matplotlib.ticker as ticker
 try:
     import multiprocessing as mp
     multiprocess = True
@@ -333,7 +334,6 @@ def parse_violin(start, stop, vectors1, traj1_name, vectors2=False, traj2_name=F
 
     return (violin_df)
 
-
 def plot_cubes(data, color, label, ax):
     x_data = [x[0] for x in data]
     y_data = [y[1] for y in data]
@@ -423,12 +423,22 @@ def return_unique(grid_pop_vectors):
     """
     return (new_dict, count_dict)
 
-
 def set_ax_lims_3d(grids1, grids2, ax):
+    """ Flatten the grids datasets, join them and find the lowest and highest gridpoint. Set ax limits and ticks """
+    """
+    Since plot_cubes() function determines the cube size using args.grid, we have to count with that (grids contain 
+    "grid size" units, while the plot is in real nanometers (grid-size*args.grid)
+    """
+
     """ Flatten the grids datasets, join them and find the lowest and highest gridpoint. Set ax limits and ticks """
     flat_list = [item for sublist in grids1 for item in sublist]
     flat_list_2 = [item for sublist in grids2 for item in sublist]
     flat_list = flat_list + flat_list_2
+
+    grids_x = [x[0] for x in grids1] + [x[0] for x in grids2]
+    grids_y = [y[1] for y in grids1] + [y[1] for y in grids2]
+    grids_z = [z[2] for z in grids1] + [z[2] for z in grids2]
+
     lower, upper = (min(flat_list) * args.grid) - args.grid, (max(flat_list) * args.grid) + args.grid
     # print(lower, upper)
 
@@ -444,6 +454,17 @@ def set_ax_lims_3d(grids1, grids2, ax):
     ax.set_yticks(ticks=ticks)
     ax.set_zticks(ticks=ticks)
     ax.set(xlim=(lower, upper), ylim=(lower, upper), zlim=(lower, upper))
+    #ax.set_box_aspect((np.ptp(grids_x), np.ptp(grids_y), np.ptp(grids_z)))
+
+    xmin = min(grids_x)*args.grid-args.grid
+    xmax = max(grids_x)*args.grid+args.grid
+    ymin = min(grids_y)*args.grid-args.grid
+    ymax = max(grids_y)*args.grid+args.grid
+    zmin = min(grids_z)*args.grid-args.grid
+    zmax = max(grids_z)*args.grid+args.grid
+
+    #ax.set(xlim=(min(grids_x)*args.grid, max(grids_x)*args.grid)+args.grid, ylim=(min(grids_y)*args.grid-args.grid, max(grids_y)*args.grid)+args.grid, zlim=(min(grids_z)*args.grid-args.grid, max(grids_z)*args.grid)+args.grid)
+    ax.set(xlim=(xmin, xmax), ylim=(ymin, ymax), zlim=(zmin, zmax))
 
 def write_to_pdb_beta(pdb, delta):
     """
@@ -472,6 +493,9 @@ def write_to_pdb_beta(pdb, delta):
             break # exits the loop after writing the first frame
         elif 'ATOM' in line:
             factor = delta.iloc[atom_ind]
+            #print(factor)
+
+
             factor = "{:10.4f}".format(factor)
             # This is an ugly hack, replace later
             new_line = line.replace(' 0.00 ', factor)
@@ -487,6 +511,19 @@ def write_to_pdb_beta(pdb, delta):
     return(new_pdb)
 
 
+# Helper function for better boolean argument handling
+def str2bool(v):
+    if isinstance(v, bool):
+        return(v)
+    if v.lower() in ('yes', 'true', 't', 'y', '1'):
+        return(True)
+    elif v.lower() in ('no', 'false', 'f', 'n', '0'):
+        return(False)
+    else:
+        raise(argparse.ArgumentTypeError('Boolean value expected.'))
+
+
+
 def main(argv=sys.argv[1:]):
 
     ## General I/O
@@ -494,7 +531,6 @@ def main(argv=sys.argv[1:]):
     parser.add_argument("--f", type=str, help='Input vector.json for trajectory 1', required=True)
     parser.add_argument("--s", type=str, help='OPTIONAL Input vector.json for trajectory 2', default=False)
     parser.add_argument("--o", type=str, help='Output directory, defaults to names of trajectories used separated by _', required=False, default=False)
-    parser.add_argument("--plot", type=bool, help='Plot spatial stuff, defaults to False', default=False)
     parser.add_argument("--pdbs", type=str, help='OPTIONAL Input structure in .pdb format of the second trajectory', default=False)
     parser.add_argument("--resi", type=str, help='OPTIONAL atoms-to-residues assignment file.json. Will turn on residue mode', required=False, default=False)
 
@@ -510,9 +546,15 @@ def main(argv=sys.argv[1:]):
     parser.add_argument('--mp', type=int, help='Nthreads to use for grid calculations, defaults to 1', required=False, default=False)
 
     ## Plotting
-    parser.add_argument('--plot_3d', type=str, help='OPTIONAL plot results in a 3D-plot', required=False, default=True)
-    parser.add_argument('--plot_positions', type=str, help='OPTIONAL plot positional violin plots', required=False, default=True)
-    parser.add_argument('--plot_diff', type=str, help='OPTIONAL plot explored volume by atom', required=False, default=True)
+    parser.add_argument("--plot", type=str2bool, help='Plot spatial stuff, defaults to False', const=True, default=True, nargs='?')
+    parser.add_argument('--plot_3d', type=str2bool, help='OPTIONAL plot results in a 3D-plot', const=True, required=False, default=True, nargs='?')
+    parser.add_argument('--plot_positions', type=str2bool, help='OPTIONAL plot positional violin plots', const=True, required=False, default=True, nargs='?')
+    parser.add_argument('--plot_diff', type=str2bool, help='OPTIONAL plot explored volume by atom', const=True, required=False, default=True, nargs='?')
+    parser.add_argument('--plot_violin', type=str2bool, help='OPTIONAL plot violin plots of spatial positions', const=True, required=False, default=True, nargs='?')
+
+
+
+
     ##
 
 
@@ -520,10 +562,12 @@ def main(argv=sys.argv[1:]):
     args = parser.parse_args(argv)
 
     # Set up default output directory, trajectory names
+    traj1_name = args.f.replace('.json', '')
+    if args.s:
+        traj2_name = args.s.replace('.json', '')
+
     if not args.o:
-        traj1_name = args.f.replace('.json', '')
         if args.s:
-            traj2_name = args.s.replace('.json', '')
             args.o = f'{traj1_name}_{traj2_name}'
         else:
             args.o = traj1_name
@@ -543,9 +587,24 @@ def main(argv=sys.argv[1:]):
             with open(args.s) as file:
                 global vectors2
                 vectors2 = json.load(file)
+                # Append to a file that is later used to make sense of output folders for cartesian_batch.py
+                # Traj1, traj2, directory, dynamical data, conformational data
+                with open('outputs.txt', 'at') as file:
+                    if args.resi:
+                        diffname = 'diff_resis.csv'
+                    else:
+                        diffname = 'diff_atom.csv'
+                    confname = f'{args.o}_grid_g{args.grid}_p{args.pop_threshold}.csv'
+
+                    file.write(f'{args.f},{args.s},{args.o},{diffname},{confname}\n')
+
         except:
             print(f'{args.s} not found, will proceed with only one vector file analysis, obtained from --f')
             args.s = False
+
+
+
+
 
     if str.lower(args.method) == 'volume' or str.lower(args.method) == 'all':
         output_df1 = analyse_space(vectors1)
@@ -587,7 +646,7 @@ def main(argv=sys.argv[1:]):
             output_df.loc[output_df.index[0], f'SUMV({traj1_name})/step'] = tot_explored_volume_1 / len(
                 list(vectors1.keys()))
 
-        output_df.to_csv(f'{args.o}/diff_atom.csv')
+        output_df.to_csv(f'{args.o}/diff_atom.csv', float_format='{:.12f}')
 
         if args.resi:
             output_residue_df = pd.DataFrame()
@@ -826,7 +885,7 @@ def main(argv=sys.argv[1:]):
             # Show
             plt.show()
 
-    if str.lower(args.method) == 'violin' or str.lower(args.method) == 'all':
+    if str.lower(args.method) == 'violin' or (str.lower(args.method) == 'all' and args.plot_violin):
         """
         Using non-unique grid data, plot a violin plot to show x,y,z and density positions in a grid using violin plot       
         """
@@ -838,8 +897,6 @@ def main(argv=sys.argv[1:]):
             except FileNotFoundError:
                 print(f'{args.resi} not found, will not use.')
                 args.resi = False
-
-
 
         def plot_violin(indexer):
             indexer = int(indexer)
@@ -974,8 +1031,12 @@ def main(argv=sys.argv[1:]):
             #axs_list[2].set_title(f"atom {indexer+1} explored volume per traj. step")
 
             # RMS plot
-            sb.lineplot(data=GRIDF, ax=ax2)
-            sb.scatterplot(data=GRIDF.iloc[indexer, :], ax=ax2, s=20, color='red', marker='o')
+            rms_x = [i for i in range(1, len(GRIDF.iloc[:, 0])+1)]
+            rms_y = GRIDF.iloc[:, 0]
+            ax2.plot(rms_x, rms_y, zorder=1)
+            ax2.scatter(rms_x[indexer], rms_y[indexer], s=40, color='red', marker='x', zorder=2)
+            ax2.xaxis.set_major_locator(ticker.MultipleLocator(15))
+            ax2.set_xticklabels(ax2.get_xticks(), rotation=90)
 
             print(GRIDF)
 
@@ -1010,6 +1071,7 @@ def main(argv=sys.argv[1:]):
             set_ax_lims_3d(grids1, grids2, ax=ax4)
             #axs_list[3].set_title(f'Atom {indexer + 1}\ngridsize {args.grid}, pop. thresh. {args.pop_threshold}')
 
+            #fig.tight_layout()
             plt.draw()
 
         def save_all_violin(_):
@@ -1038,16 +1100,20 @@ def main(argv=sys.argv[1:]):
             #print(VOLDF)
             #print(GRIDF)
 
-            slider = Slider(ax=axbox, label='Atom #', valmin=0, valmax=len(vector1_keys) - 1,
-                            valinit=0, valstep=1)
-            slider.on_changed(plot_violin_complex)
+            #slider = Slider(ax=axbox, label='Atom #', valmin=0, valmax=len(vector1_keys) - 1,
+            #                valinit=0, valstep=1)
+            #slider.on_changed(plot_violin_complex)
+
+            text_box = TextBox(axbox, "Atom", textalignment="center")
+            text_box.on_submit(plot_violin_complex)
+            text_box.set_val(0)
 
             save_button = Button(ax=save_axbox, label='Save current')
             save_button.on_clicked(lambda x: plt.savefig(f'{args.o}/violinplot_{current_atoms_violin}.png'))
 
             save_all_button = Button(ax=save_all_axbox, label='Save all')
             save_all_button.on_clicked(save_all_violin)
-
+            # FIX CLEANING IN PLOT_VIOLIN (NOT COMPLEX)
             global axs_list
             axs_list = []
 
@@ -1055,20 +1121,23 @@ def main(argv=sys.argv[1:]):
 
             plt.show()
 
-
         else:
 
             chunk_size = 3
 
-            slider = Slider(ax=axbox, label='Atom/Residue #', valmin=0, valmax=(len(vector1_keys) / chunk_size) - 1,
-                            valinit=0, valstep=1)
-            slider.on_changed(plot_violin)
-
+            #slider = Slider(ax=axbox, label='Atom/Residue #', valmin=0, valmax=(len(vector1_keys) / chunk_size) - 1,
+            #                valinit=0, valstep=1)
+            #slider.on_changed(plot_violin)
             save_button = Button(ax=save_axbox, label='Save current')
             save_button.on_clicked(lambda x: plt.savefig(f'{args.o}/violinplot_{current_atoms_violin}.png'))
 
             save_all_button = Button(ax=save_all_axbox, label='Save all')
             save_all_button.on_clicked(save_all_violin)
+
+
+            text_box = TextBox(axbox, "Atom", textalignment="center")
+            text_box.on_submit(plot_violin_complex)
+            text_box.set_val(0)
 
             plot_violin(0)  # Initial plot
 
