@@ -178,7 +178,7 @@ def mann_whitney_u_volumes(df1, df2):
 
     return(atom_index, statistics, p_vals)
 
-def drop_above_pval(mwu_pvals, volsteps_traj1, volsteps_traj2):
+def drop_above_pval(mwu_pvals, mwu_scores, volsteps_traj1, volsteps_traj2):
     """
     :param mwu_pvals:
     :param volsteps_traj1:
@@ -207,10 +207,7 @@ def drop_above_pval(mwu_pvals, volsteps_traj1, volsteps_traj2):
 
     return(volsteps_traj1_pvals, volsteps_traj2_pvals, delta_df)
 
-
-
 def plot_dynamical_distributions(volsteps_traj1_pvals, volsteps_traj2_pvals, stacking=True):
-
 
         if stacking:
 
@@ -233,7 +230,7 @@ def plot_dynamical_distributions(volsteps_traj1_pvals, volsteps_traj2_pvals, sta
             atoms1 = list(volsteps_traj1_pvals.index)
             atoms2 = list(volsteps_traj1_pvals.index)
             all_atoms = []
-            print(volsteps_traj1_pvals)
+            #print(volsteps_traj1_pvals)
             for i in range(len(volsteps_traj1_pvals.columns)-1):
 
                 all_atoms.append(atoms1)
@@ -252,12 +249,12 @@ def plot_dynamical_distributions(volsteps_traj1_pvals, volsteps_traj2_pvals, sta
             volsteps_total = pd.melt(volsteps_total)
 
             volsteps_total = pd.concat([volsteps_total, identifier_df, all_atoms_df], axis=1)
-            print(volsteps_total)
+            #print(volsteps_total)
 
             #print(identifier_df)
             ax1 = plt.subplot()
-            sb.boxplot(data=volsteps_total, x='atom', y='value', ax=ax1, orient='v', hue='identifier')
-            sb.stripplot(data=volsteps_total, x='atom', y='value', hue="identifier", edgecolor='gray', ax=ax1)
+            sb.boxplot(data=volsteps_total, x='atom', y='value', ax=ax1, orient='v', hue='identifier', palette=['indianred','royalblue'])
+            sb.stripplot(data=volsteps_total, x='atom', y='value', hue="identifier", edgecolor='gray', ax=ax1, palette=['indianred','royalblue'])
             handles, labels = ax1.get_legend_handles_labels()  # stripplot creates a lot of legend values, get all handles and labels of the ax
             ax1.legend(handles=[handles[0], handles[1]], labels=[labels[0], labels[1]])
             ax1.set_title(f'Explored volume per step distributions per-atom\nwhere p < {args.pval}')
@@ -266,11 +263,11 @@ def plot_dynamical_distributions(volsteps_traj1_pvals, volsteps_traj2_pvals, sta
         else:
             ax1 = plt.subplot()
 
-            sb.boxplot(data=volsteps_traj1_pvals.T.iloc[0:-1, :], color='orange', ax=ax1)
-            sb.stripplot(data=volsteps_traj1_pvals.T.iloc[0:-1, :], color="orange", edgecolor='gray', ax=ax1, label='Batch 1')
+            sb.boxplot(data=volsteps_traj1_pvals.T.iloc[0:-1, :], color='orange', ax=ax1, palette=['red','blue'])
+            sb.stripplot(data=volsteps_traj1_pvals.T.iloc[0:-1, :], color="orange", edgecolor='gray', ax=ax1, label='Batch 1', palette=['indianred','royalblue'])
 
-            sb.boxplot(data=volsteps_traj2_pvals.T.iloc[0:-1, :], color='blue', ax=ax1)
-            sb.stripplot(data=volsteps_traj2_pvals.T.iloc[0:-1, :], color="blue", edgecolor='gray', ax=ax1, label='Batch 2')
+            sb.boxplot(data=volsteps_traj2_pvals.T.iloc[0:-1, :], color='blue', ax=ax1, palette=['red','blue'])
+            sb.stripplot(data=volsteps_traj2_pvals.T.iloc[0:-1, :], color="blue", edgecolor='gray', ax=ax1, label='Batch 2', palette=['indianred','royalblue'])
 
             handles, labels = ax1.get_legend_handles_labels() # stripplot creates a lot of legend values, get all handles and labels of the ax
             # Only use the first and the last handles and labels
@@ -278,13 +275,41 @@ def plot_dynamical_distributions(volsteps_traj1_pvals, volsteps_traj2_pvals, sta
 
             ax1.set_title(f'Explored volume per step distributions per-atom\nwhere p < {args.pval}')
 
-def pymol_dynamicity(kind):
+def pymol_dynamicity():
+        kind = args.pdbshow
+
         if kind == 1: # Shows which atoms have changed with probability (depends on p-values)
-            pymol_sub1 = 'cmd.label("perturbed","name+resi")'  # add "name" for specific atom name
+            pymol_sub1 = 'cmd.label("perturbed","str(ID)")'  # add "name" for specific atom name
             pymol_sub2 = 'cmd.alter("perturbed", "vdw=0.6")'
-            pymol_command = f"set orthoscopic, on; bg_color white; spectrum b,gray70_gray70_raspberry,minimum=0,maximum=1;select perturbed,b>0;set seq_view; show lines; {pymol_sub2}; show_as sticks cartoon sphere,perturbed;{pymol_sub1}; set cartoon_discrete_colors, on; set valence, 1; set label_shadow_mode, 2; set label_size,-0.6; set label_font_id,7; set label_outline_color, black; set label_position,(0,0,2)"
+            pymol_command = f"set orthoscopic, on; bg_color white; spectrum b,gray70_gray70_raspberry,minimum=0,maximum=1;select perturbed,b>0;set seq_view; show lines; {pymol_sub2}; show_as sticks cartoon sphere,perturbed;{pymol_sub1}; set cartoon_discrete_colors, on; set valence, 1; set label_shadow_mode, 2; set label_size,-0.6; set label_font_id,7; set label_outline_color, black; set label_color, white; set label_position,(0,0,2)"
             # Add something like this to cartesian_ana in the future
-            p = subprocess.Popen(f"pymol new_pdb.pdb -d '{pymol_command}'", stdout=subprocess.PIPE, shell=True)
+            p = subprocess.Popen(f"pymol dynamically_perturbed_atoms.pdb -d '{pymol_command}'", stdout=subprocess.PIPE, shell=True)
+        if kind == 2: # Shows which atoms explored more volume in which trajectory, but only for those where p-value is lower than args.pval. Others are represented by B-score=0
+            pymol_sub1 = 'select zero, b "=" 0'
+            pymol_sub2 = 'cmd.alter("*", "vdw=0.6")'
+            pymol_sub3 = 'cmd.label("more_in_first","str(ID)")'
+            pymol_sub4 = 'cmd.label("more_in_second","str(ID)")'
+            pymol_command = f"set orthoscopic, on; bg_color white; spectrum b, marine_gray70_raspberry; {pymol_sub1}; select more_in_first, b > 0; select more_in_second, b < 0; color gray70, zero; set seq_view; show lines; {pymol_sub2}; show_as sticks cartoon sphere,more_in_first;show_as sticks cartoon sphere,more_in_second;{pymol_sub3};{pymol_sub4}; set cartoon_discrete_colors, on; set valence, 1; set label_shadow_mode, 2; set label_size,-0.6; set label_font_id,7; set label_outline_color, black; set label_color, white; set label_position,(0,0,2)"
+            p = subprocess.Popen(f"pymol dynamically_perturbed_atoms_rankings.pdb -d '{pymol_command}'", stdout=subprocess.PIPE, shell=True)
+
+def mwu_score_ranking(volsteps_df, mwu_scores, m, n, mwu_pvals):
+    baseline = m*n*0.5 # mwu score of two exactly equal distributions
+
+    # Prepare DataFrame with all atoms, pvals and score columns
+    mwu_pvals_df = pd.DataFrame(mwu_pvals, columns=['pvals'])
+    mwu_scores_df = pd.DataFrame(mwu_scores, columns=['scores'])
+    volsteps_df = pd.concat([volsteps_df, mwu_pvals_df, mwu_scores_df], axis=1)
+    ###
+
+    # Create new DF of MWU score values - positive means TRAJ1 more explored volume, negative TRAJ2 more
+    volsteps_df['scores'] = volsteps_df['scores']-baseline # subtract baseline value
+    where_pvals_above_lim = volsteps_df.index[volsteps_df['pvals'] >= args.pval] # Which rows/atoms have p_vals above limit
+    volsteps_df.loc[where_pvals_above_lim, 'scores'] = 0 # set scores to zero where above p_value limit
+    #print(volsteps_df.loc[where_pvals_above_lim, 'scores'])
+
+
+    delta_df = pd.Series(volsteps_df['scores'], index=volsteps_df.index)
+    return(delta_df)
 
 
 
@@ -304,11 +329,21 @@ def main(argv=sys.argv[1:]):
 
     # Handle dynamicity aggregation and statistical testing
     volumes_traj1, volumes_traj2, volsteps_traj1, volsteps_traj2 = aggregate_volumes(diff_paths) # ==> volumes_traj1.T, volumes_traj2.T into boxplots or violins, compare the two. Use volsteps datasets, independent on traj length
-    mwu_atoms, mwu_stats, mwu_pvals = mann_whitney_u_volumes(volsteps_traj1, volsteps_traj2) # ==> results of the Mann-Whitney U test. {atom_n: (score, p-value)}
+    mwu_atoms, mwu_scores, mwu_pvals = mann_whitney_u_volumes(volsteps_traj1, volsteps_traj2) # ==> results of the Mann-Whitney U test. (atom_n, score, p-value)
 
     # Plot atoms where the distribution changed significantly (p_val < args.pval) as boxplots
-    volsteps_traj1_pvals, volsteps_traj2_pvals, delta_df = drop_above_pval(mwu_pvals, volsteps_traj1, volsteps_traj2)
+    volsteps_traj1_pvals, volsteps_traj2_pvals, only_perturbed_atoms = drop_above_pval(mwu_pvals, mwu_scores, volsteps_traj1, volsteps_traj2) # ==> two datasets only containing atoms proven to be perturbed, a dataframe prepared for b-coloring with all atoms and binary yes/no for perturbed
     plot_dynamical_distributions(volsteps_traj1_pvals, volsteps_traj2_pvals, stacking=True) # Stacked or unstacked boxplot combined with stripplot
+
+    # Rank change of dynamicity, which variant more/less explored volume
+    m = len(volumes_traj1.columns) # amount of samples m
+    n = len(volumes_traj2.columns) # amount of samples n
+    mwu_score_delta_df = mwu_score_ranking(volumes_traj1, mwu_scores, m, n, mwu_pvals) # only one dataframe needed, they both contain scores and atom numbers
+
+
+
+    # only_perturbed_atoms => dataframe which contains only atoms, which have been identified as perturbed using p-values. Can be used for PyMol plot kind=1
+
     ###
 
     # Visualize atoms where the distribution changed significantly (p_val < args.pval) into B-factors of .pdb
@@ -316,15 +351,25 @@ def main(argv=sys.argv[1:]):
     Use PyMol API later    
     """
     if args.pdbs:
-        new_pdb = write_to_pdb_beta(args.pdbs, delta_df)
-        with open('new_pdb.pdb', 'w') as file:
-            file.write(new_pdb)
 
-
+        # Prepare .pdb for plot of kind=1 (show perturbed atoms)
+        pdb_kind1 = write_to_pdb_beta(args.pdbs, only_perturbed_atoms)
+        pdb_kind1_header = f'REMARK B-Factor 1 means that the atom was identified as perturbed by comparing explored\n' \
+                           f'REMARK volume distributions using MWU-test with a p-value limit of {args.pval}\n'
+        pdb_kind2 = write_to_pdb_beta(args.pdbs, mwu_score_delta_df)
+        pdb_kind2_header = f'REMARK B-Factor 0 means that the atom was NOT identified as perturbed by comparing explored\n' \
+                           f'REMARK volume distributions using MWU-test with a p-value limit of {args.pval}. Positive B-Factor\n' \
+                           f'REMARK means that explored volume was larger for the first batch of trajectories and vice-versa.\n' \
+                           f'REMARK B-factors are MWU scores with subtracted baselines (m*n*0.5) that represent the score in\n' \
+                           f'REMARK case of both distributions being identical.\n'
+        with open('dynamically_perturbed_atoms.pdb', 'w') as file:
+            file.write(pdb_kind1_header+pdb_kind1)
+        with open('dynamically_perturbed_atoms_rankings.pdb', 'w') as file:
+            file.write(pdb_kind2_header+pdb_kind2)
 
 
         if args.pdbshow:
-            pymol_dynamicity(kind=args.pdbshow)
+            pymol_dynamicity()
 
 
 
