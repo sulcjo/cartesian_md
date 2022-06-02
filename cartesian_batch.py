@@ -26,12 +26,9 @@ done
 """
 EXAMPLE USAGE
 
-cartesian_batch.py --f outputs.txt --id "pdz,fd4" --pval 0.01 --pdbs pdz_representative.pdb
+cartesian_batch.py --f outputs.txt --id "pdz,fd4" --pval 0.01 --pdbs pdz_representative.pdb --pdbshow 2
 
 """
-
-
-
 
 import sys, argparse, os
 import pandas as pd
@@ -214,8 +211,8 @@ def plot_dynamical_distributions(volsteps_traj1_pvals, volsteps_traj2_pvals, sta
             # Add identifiers (which trajectory)
             high1 = ((len(volsteps_traj1_pvals.columns)-1)*len(volsteps_traj1_pvals.index))
             high2 = ((len(volsteps_traj2_pvals.columns)-1)*len(volsteps_traj2_pvals.index))
-            identifier1 = [1 for i in range(0, high1)]
-            identifier2 = [2 for i in range(0, high2)]
+            identifier1 = [args.id[0] for i in range(0, high1)]
+            identifier2 = [args.id[1] for i in range(0, high2)]
             identifier = identifier1 + identifier2
 
             index1 = list(volsteps_traj1_pvals.columns)
@@ -287,9 +284,9 @@ def pymol_dynamicity():
         if kind == 2: # Shows which atoms explored more volume in which trajectory, but only for those where p-value is lower than args.pval. Others are represented by B-score=0
             pymol_sub1 = 'select zero, b "=" 0'
             pymol_sub2 = 'cmd.alter("*", "vdw=0.6")'
-            pymol_sub3 = 'cmd.label("more_in_first","str(ID)")'
-            pymol_sub4 = 'cmd.label("more_in_second","str(ID)")'
-            pymol_command = f"set orthoscopic, on; bg_color white; spectrum b, marine_gray70_raspberry; {pymol_sub1}; select more_in_first, b > 0; select more_in_second, b < 0; color gray70, zero; set seq_view; show lines; {pymol_sub2}; show_as sticks cartoon sphere,more_in_first;show_as sticks cartoon sphere,more_in_second;{pymol_sub3};{pymol_sub4}; set cartoon_discrete_colors, on; set valence, 1; set label_shadow_mode, 2; set label_size,-0.6; set label_font_id,7; set label_outline_color, black; set label_color, white; set label_position,(0,0,2)"
+            pymol_sub3 = f'cmd.label("more_in_{args.id[0]}","str(ID)")'
+            pymol_sub4 = f'cmd.label("more_in_{args.id[1]}","str(ID)")'
+            pymol_command = f"set orthoscopic, on; bg_color white; spectrum b, marine_gray70_raspberry; {pymol_sub1}; select more_in_{args.id[0]}, b > 0; select more_in_{args.id[1]}, b < 0; color gray70, zero; set seq_view; show lines; {pymol_sub2}; show_as sticks cartoon sphere,more_in_{args.id[0]};show_as sticks cartoon sphere,more_in_{args.id[1]};{pymol_sub3};{pymol_sub4}; set cartoon_discrete_colors, on; set valence, 1; set label_shadow_mode, 2; set label_size,-0.6; set label_font_id,7; set label_outline_color, black; set label_color, white; set label_position,(0,0,2)"
             p = subprocess.Popen(f"pymol dynamically_perturbed_atoms_rankings.pdb -d '{pymol_command}'", stdout=subprocess.PIPE, shell=True)
 
 def mwu_score_ranking(volsteps_df, mwu_scores, m, n, mwu_pvals):
@@ -319,7 +316,8 @@ def main(argv=sys.argv[1:]):
     parser.add_argument("--id", type=parse_identifiers, help='Identifier of the two datasets, format "ID1,ID2"', required=True)
     parser.add_argument("--pval", type=float, help="P-value limit for Mann-Whitney U testing distributions, default=0.01", required=False, default=0.01)
     parser.add_argument("--pdbs", type=str, help='OPTIONAL Input structure in .pdb format of the molecule', default=False)
-    parser.add_argument("--pdbshow", type=int, help='Creates a PyMol visualization of dynamicity change, requires --pdbs. Default=1: 0 None, 1 all atoms below p-val, 2 all atoms below p-val, also less/more', default=1)
+    parser.add_argument("--pdbshow", type=int, help='Creates a PyMol visualization of dynamicity change, requires --pdbs. Default=1: 0 None, 1 all atoms below p-val, 2 all atoms below p-val, also less/more',
+                        default=1, choices=(0,1,2))
 
     global args
     args = parser.parse_args(argv)
@@ -346,6 +344,7 @@ def main(argv=sys.argv[1:]):
 
     ###
 
+
     # Visualize atoms where the distribution changed significantly (p_val < args.pval) into B-factors of .pdb
     """
     Use PyMol API later    
@@ -355,18 +354,19 @@ def main(argv=sys.argv[1:]):
         # Prepare .pdb for plot of kind=1 (show perturbed atoms)
         pdb_kind1 = write_to_pdb_beta(args.pdbs, only_perturbed_atoms)
         pdb_kind1_header = f'REMARK B-Factor 1 means that the atom was identified as perturbed by comparing explored\n' \
-                           f'REMARK volume distributions using MWU-test with a p-value limit of {args.pval}\n'
+                           f'REMARK volume distributions using MWU-test with a p-value limit of {args.pval}\n' \
+                           f'REMARK ANALYZED {m}x{args.id[0]},{n}x{args.id[1]} \n'
         pdb_kind2 = write_to_pdb_beta(args.pdbs, mwu_score_delta_df)
         pdb_kind2_header = f'REMARK B-Factor 0 means that the atom was NOT identified as perturbed by comparing explored\n' \
                            f'REMARK volume distributions using MWU-test with a p-value limit of {args.pval}. Positive B-Factor\n' \
-                           f'REMARK means that explored volume was larger for the first batch of trajectories and vice-versa.\n' \
+                           f'REMARK means that explored volume was larger for the -{args.id[0]}- batch of trajectories and vice-versa.\n' \
                            f'REMARK B-factors are MWU scores with subtracted baselines (m*n*0.5) that represent the score in\n' \
-                           f'REMARK case of both distributions being identical.\n'
+                           f'REMARK case of both distributions being identical.\n' \
+                           f'REMARK ANALYZED {m}x{args.id[0]},{n}x{args.id[1]} \n'
         with open('dynamically_perturbed_atoms.pdb', 'w') as file:
             file.write(pdb_kind1_header+pdb_kind1)
         with open('dynamically_perturbed_atoms_rankings.pdb', 'w') as file:
             file.write(pdb_kind2_header+pdb_kind2)
-
 
         if args.pdbshow:
             pymol_dynamicity()
