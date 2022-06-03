@@ -8,14 +8,14 @@ Prepare analyses of trajectories:
 
 
 mkdir pdz_fd4_batch
-for i in {1..19}; do
+for i in {1..29}; do
     cp pdz/run_${i}_pdz_vectors.json fd4/run_${i}_fd4_vectors.json pdz_fd4_batch
 done
 
 cd pdz_fd4_batch
 
 # Compare two trajectories replicas among each other (N^2 pairs)
-for i in {1..19}; do
+for i in {1..29}; do
     for j in {1..19}; do
         echo $i $j
         cartesian_ana.py --f run_${i}_pdz_vectors.json --s run_${j}_fd4_vectors.json --plot False --plot_3d False --plot_positions False --plot_diff False --mp 5 --method all --grid 0.1 --plot_violin False --o out_${i}${j}
@@ -26,7 +26,7 @@ done
 """
 EXAMPLE USAGE
 
-cartesian_batch.py --f outputs.txt --id "pdz,fd4" --pval 0.01 --pdbs pdz_representative.pdb --pdbshow 2
+cartesian_batch.py --f outputs.txt --id "pdz,fd4" --pval 0.01 --pdbs pdz_representative.pdb --pdbshow 2 --o output_dir
 
 """
 
@@ -41,9 +41,9 @@ from cartesian_ana import write_to_pdb_beta
 import subprocess
 __prepare_matplotlib()
 
-
-
 def parse_paths(output_file):
+    # file.write(f'{args.f},{args.s},{args.o},{diffname},{confname},{grids1name},{grids2name},{grids1count},{grids2count}\n')
+
     with open(output_file) as file:
         lines=file.readlines()
         lines=[line.strip('\n').strip('.json') for line in lines]
@@ -52,15 +52,31 @@ def parse_paths(output_file):
     diff_paths=[]
     conf_paths=[]
 
+    grids1_paths=[]
+    grids2_paths=[]
+    grids1_count_paths=[]
+    grids2_count_paths=[]
+
     for line in lines:
         split_line = line.split(',')
+
+        split_line.append(100) # REMOVE
+        split_line.append(100) # REMOVE
+        split_line.append(100) # REMOVE
+        split_line.append(100) # REMOVE
+
+
         keys1.append(split_line[0])
         keys2.append(split_line[1])
         dir = split_line[2]
         diff_paths.append(f'{dir}/{split_line[3]}')
         conf_paths.append(f'{dir}/{split_line[4]}')
+        grids1_paths.append(f'{dir}/{split_line[5]}')
+        grids2_paths.append(f'{dir}/{split_line[6]}')
+        grids1_count_paths.append(f'{dir}/{split_line[7]}')
+        grids2_count_paths.append(f'{dir}/{split_line[8]}')
 
-    return(keys1, keys2, diff_paths, conf_paths)
+    return(keys1, keys2, diff_paths, conf_paths, grids1_paths, grids2_paths, grids1_count_paths, grids2_count_paths)
 
 def aggregate_volumes(paths):
     # Explored volumes are not pairwise, only grab unique values
@@ -295,7 +311,8 @@ def mwu_score_ranking(volsteps_df, mwu_scores, m, n, mwu_pvals):
     # Prepare DataFrame with all atoms, pvals and score columns
     mwu_pvals_df = pd.DataFrame(mwu_pvals, columns=['pvals'])
     mwu_scores_df = pd.DataFrame(mwu_scores, columns=['scores'])
-    volsteps_df = pd.concat([volsteps_df, mwu_pvals_df, mwu_scores_df], axis=1)
+    total_df = pd.concat([volsteps_df, mwu_pvals_df, mwu_scores_df], axis=1)
+    volsteps_df = total_df.copy(deep=True) # otherwise it assigns a new name for the same object
     ###
 
     # Create new DF of MWU score values - positive means TRAJ1 more explored volume, negative TRAJ2 more
@@ -306,9 +323,7 @@ def mwu_score_ranking(volsteps_df, mwu_scores, m, n, mwu_pvals):
 
 
     delta_df = pd.Series(volsteps_df['scores'], index=volsteps_df.index)
-    return(delta_df)
-
-
+    return(delta_df, total_df)
 
 def main(argv=sys.argv[1:]):
     parser = argparse.ArgumentParser()
@@ -318,12 +333,28 @@ def main(argv=sys.argv[1:]):
     parser.add_argument("--pdbs", type=str, help='OPTIONAL Input structure in .pdb format of the molecule', default=False)
     parser.add_argument("--pdbshow", type=int, help='Creates a PyMol visualization of dynamicity change, requires --pdbs. Default=1: 0 None, 1 all atoms below p-val, 2 all atoms below p-val, also less/more',
                         default=1, choices=(0,1,2))
+    parser.add_argument("--o", type=str, help='Output directory, defaults to names of trajectories used separated by _', required=False, default='.')
 
     global args
     args = parser.parse_args(argv)
 
+    #
+    if not args.o:
+        args.o = f'{args.id[0]}_{args.id[1]}'
+    if not os.path.exists(args.o):
+        os.makedirs(args.o)
+
+
+
     # Handle data loading
-    keys1, keys2, diff_paths, conf_paths = parse_paths(args.f)
+    keys1, keys2, diff_paths, conf_paths, grids1, grids2, gridscount1, gridscount2 = parse_paths(args.f)
+
+
+    """
+    ########################################
+    # Testing for perturbation of dynamics #
+    ########################################
+    """
 
     # Handle dynamicity aggregation and statistical testing
     volumes_traj1, volumes_traj2, volsteps_traj1, volsteps_traj2 = aggregate_volumes(diff_paths) # ==> volumes_traj1.T, volumes_traj2.T into boxplots or violins, compare the two. Use volsteps datasets, independent on traj length
@@ -336,16 +367,11 @@ def main(argv=sys.argv[1:]):
     # Rank change of dynamicity, which variant more/less explored volume
     m = len(volumes_traj1.columns) # amount of samples m
     n = len(volumes_traj2.columns) # amount of samples n
-    mwu_score_delta_df = mwu_score_ranking(volumes_traj1, mwu_scores, m, n, mwu_pvals) # only one dataframe needed, they both contain scores and atom numbers
+    mwu_score_delta_df, total_dynamicity_df = mwu_score_ranking(volumes_traj1, mwu_scores, m, n, mwu_pvals) # only one dataframe needed, they both contain scores and atom numbers
 
+    # Save relevant dynamicity datasets
+    total_dynamicity_df.to_csv(f'{args.o}/{m}x{args.id[0]},{n}x{args.id[1]}.csv')
 
-
-    # only_perturbed_atoms => dataframe which contains only atoms, which have been identified as perturbed using p-values. Can be used for PyMol plot kind=1
-
-    ###
-
-
-    # Visualize atoms where the distribution changed significantly (p_val < args.pval) into B-factors of .pdb
     """
     Use PyMol API later    
     """
@@ -363,16 +389,19 @@ def main(argv=sys.argv[1:]):
                            f'REMARK B-factors are MWU scores with subtracted baselines (m*n*0.5) that represent the score in\n' \
                            f'REMARK case of both distributions being identical.\n' \
                            f'REMARK ANALYZED {m}x{args.id[0]},{n}x{args.id[1]} \n'
-        with open('dynamically_perturbed_atoms.pdb', 'w') as file:
+        with open(f'{args.o}/dynamically_perturbed_atoms.pdb', 'w') as file:
             file.write(pdb_kind1_header+pdb_kind1)
-        with open('dynamically_perturbed_atoms_rankings.pdb', 'w') as file:
+        with open(f'{args.o}/dynamically_perturbed_atoms_rankings.pdb', 'w') as file:
             file.write(pdb_kind2_header+pdb_kind2)
 
         if args.pdbshow:
             pymol_dynamicity()
 
-
-
+    """
+    #
+    # Testing for perturbation of conformation
+    #
+    """
 
 
 

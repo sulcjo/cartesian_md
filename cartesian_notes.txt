@@ -1,0 +1,9 @@
+:Either get rid of "resis" modes, or complete them and do separate options for residues, backbone/sidechain atoms in specific etc.
+
+
+> cartesian.py should take paths of trajectories and index.ndx files only and prepare everything, then calculate vectors
+> cartesian_ana.py get rid of method selection? if not, test and fix all the different combinations
+> cartesian_batch.py conformation change part
+    .allow for only testing a single batch of datasets?
+    .output dataframes
+    .somehow calculate dynamical conservation, perhaps through high p-value tests

@@ -4,6 +4,7 @@ Combined cartesian_diff and cartesian_grid modules into cartesian_ana
 
 import sys, argparse, os
 # ujson is recommended but not needed, speeds up json vectors loading
+"""
 try:
     import ujson as json
 except ImportError:
@@ -11,7 +12,11 @@ except ImportError:
         import simplejson as json
     except ImportError:
         import json
+"""
 
+# orjson could be used for speedup of json operations
+
+import json
 import numpy as np
 import pandas as pd
 from alive_progress import alive_bar
@@ -41,6 +46,13 @@ from matplotlib.widgets import TextBox, Slider, Button
 from mpl_toolkits.mplot3d.art3d import Poly3DCollection
 
 __prepare_matplotlib()
+
+
+class NumpyEncoder(json.JSONEncoder): # Encodes numpy ndarrays into serializable lists for json
+    def default(self, obj):
+        if isinstance(obj, np.ndarray):
+            return obj.tolist()
+        return json.JSONEncoder.default(self, obj)
 
 def analyse_space(vector):
     """
@@ -589,14 +601,24 @@ def main(argv=sys.argv[1:]):
                 vectors2 = json.load(file)
                 # Append to a file that is later used to make sense of output folders for cartesian_batch.py
                 # Traj1, traj2, directory, dynamical data, conformational data
+
+                """
+                This part only works if you're using two trajectories, perhaps modify later, so it prints out an outputs.txt
+                file for cartesian_batch.py even if we're only interested in obtaining distributions with a single batch of trajectories
+                """
+
                 with open('outputs.txt', 'at') as file:
                     if args.resi:
                         diffname = 'diff_resis.csv'
                     else:
                         diffname = 'diff_atom.csv'
                     confname = f'{args.o}_grid_g{args.grid}_p{args.pop_threshold}.csv'
+                    grids1name = f'{traj1_name}_grid_g{args.grid}.json'
+                    grids2name = f'{traj2_name}_grid_g{args.grid}.json'
+                    grids1count = f'{traj1_name}_grid_g{args.grid}_count.json'
+                    grids2count = f'{traj2_name}_grid_g{args.grid}_count.json'
 
-                    file.write(f'{args.f},{args.s},{args.o},{diffname},{confname}\n')
+                    file.write(f'{args.f},{args.s},{args.o},{diffname},{confname},{grids1name},{grids2name},{grids1count},{grids2count}\n')
 
         except:
             print(f'{args.s} not found, will proceed with only one vector file analysis, obtained from --f')
@@ -771,6 +793,22 @@ def main(argv=sys.argv[1:]):
         else:
             grid2_size = 0
             grid2_unq_size = 0
+
+        # Save grids for later use with cartesian_batch
+        with open(f'{args.o}/{traj1_name}_grid_g{args.grid}.json', 'w') as file:
+            json.dump(atomic_grid_uniq, file, cls=NumpyEncoder)
+        with open(f'{args.o}/{traj1_name}_grid_g{args.grid}_count.json', 'w') as file:
+            json.dump(grid_count, file, cls=NumpyEncoder)
+
+        if args.s:
+            with open(f'{args.o}/{traj2_name}_grid_g{args.grid}.json', 'w') as file:
+                json.dump(atomic_grid_2_uniq, file, cls=NumpyEncoder)
+            with open(f'{args.o}/{traj2_name}_grid_g{args.grid}_count.json', 'w') as file:
+                json.dump(grid_count_2, file, cls=NumpyEncoder)
+        ###
+
+
+
 
         global GRIDF
         GRIDF = rms_out
@@ -966,10 +1004,7 @@ def main(argv=sys.argv[1:]):
             except:
                 pass
 
-
             # Clean up after previous plot
-
-            print(axs_list)
 
             global current_atoms_violin
 
@@ -1142,11 +1177,6 @@ def main(argv=sys.argv[1:]):
             plot_violin(0)  # Initial plot
 
             plt.show()
-
-
-
-
-
 
     # Add possibility to multiprocess the scan
     if str.lower(args.method) == 'grid_scan':
