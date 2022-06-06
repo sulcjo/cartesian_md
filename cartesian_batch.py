@@ -16,7 +16,7 @@ cd pdz_fd4_batch
 
 # Compare two trajectories replicas among each other (N^2 pairs)
 for i in {1..29}; do
-    for j in {1..19}; do
+    for j in {1..29}; do
         echo $i $j
         cartesian_ana.py --f run_${i}_pdz_vectors.json --s run_${j}_fd4_vectors.json --plot False --plot_3d False --plot_positions False --plot_diff False --mp 5 --method all --grid 0.1 --plot_violin False --o out_${i}${j}
     done
@@ -59,11 +59,6 @@ def parse_paths(output_file):
 
     for line in lines:
         split_line = line.split(',')
-
-        split_line.append(100) # REMOVE
-        split_line.append(100) # REMOVE
-        split_line.append(100) # REMOVE
-        split_line.append(100) # REMOVE
 
 
         keys1.append(split_line[0])

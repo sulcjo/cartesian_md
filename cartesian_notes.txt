@@ -2,8 +2,18 @@
 
 
 > cartesian.py should take paths of trajectories and index.ndx files only and prepare everything, then calculate vectors
+    .also make cartesian.py read the coordinates straight from the .pdb file
+    .Improve cartesian.py data handling (multithreading?)
+
 > cartesian_ana.py get rid of method selection? if not, test and fix all the different combinations
+    - only keep "batch mode" vs "normal mode"
+    .Look into improving cartesian_ana.py performance
+    .finding unique bins through pandas
 > cartesian_batch.py conformation change part
     .allow for only testing a single batch of datasets?
     .output dataframes
     .somehow calculate dynamical conservation, perhaps through high p-value tests
+
+Batch for conformations:
+..do away with pair-wise comparison? if i won't use "RMS", then pairwise comparing is useless and only takes performance.
+    batch analysis will likely come from only grid data

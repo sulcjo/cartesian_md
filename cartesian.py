@@ -1,10 +1,9 @@
-import sys, argparse
+import argparse
+import numpy as np
+import pandas as pd
+import pyarrow
 import re
-import multiprocessing as mp
-from alive_progress import alive_bar
-import json
 import sys
-
 
 """
 python cartesian.py [--f file containing coordinates of atoms <cart.xvg>] [--s file containing coordinates of molecular COMs <mol.xvg>]
@@ -12,8 +11,11 @@ python cartesian.py [--f file containing coordinates of atoms <cart.xvg>] [--s f
 Cartesian requires an output file from gmx traj -f TRAJ.xtc -s TOP.tpr -ox CARTESIAN.xvg (vectors of atoms).
 Optionally, it also requires an output from the same command, but with -com flag specified (vectors of COMs, beware - always 
 compare comparable, that is COMs of the same part of the molecule for both systems!). Alternative to this
-is just suplying a single coord.xvg for each of the trajectories, which were previously aligned using cartesian_prepare.sh.
-In this case, vectors are compared in cartesian space after careful fitting of each frame using SSAP algorithm.
+is just suplying a single coord.xvg for each of the trajectories, which were previously aligned.
+
+Input can also be read from .pdb file (again fitted for both rotation and translation). This usage doesn't allow for using --s 
+parameter for COM fitting. Frames of the trajectory are separated by ENDMDL keyword in pdb. Coordinates from .pdb are recalculated from
+Angstroms to nm.
 
 Please make sure that your trajectory is free of PBC and is fitted both for rotational as well as translational
 movement of you molecule of interest. The molecule should also be (usually) exploring the equilibrium
@@ -38,51 +40,7 @@ def __prepare_matplotlib():
     plt.rc('legend', fontsize=SMALL_SIZE)  # legend fontsize
     plt.rc('figure', titlesize=BIGGER_SIZE)  # fontsize of the figure title
 
-def assign_to_dict(data, x_cart, y_cart, z_cart):
-    times = []
-
-    # Atoms don't start with a zero index, we'll start from the minimum value
-    # They also don't neccessarily follow a linear progression of indexes
-    first_xcart_key = list(x_cart.keys())[0]
-    starting_atom = re.search('(?<=(atom)\s)[0-9]*', first_xcart_key)[0]
-    starting_atom = int(starting_atom)
-    x_keys = list(x_cart.keys())
-    y_keys = list(y_cart.keys())
-    z_keys = list(z_cart.keys())
-
-    with alive_bar(len(data)) as bar:
-        print('Assigning vectors to dictionaries')
-
-        for line in data:
-            ix, iy, iz = 0, 0, 0
-            line_split = line.replace('\n', '').split('\t')
-            times.append(line_split[0])
-
-            curr = 'x'
-
-            bar()
-            for value in line_split[1:]:
-
-
-                if curr == 'x':
-                    x_cart[x_keys[ix]].append(value)
-                    #print(f'Appending {value} to {x_keys[ix]} @ {line_split[0]}, ix={ix}')
-                    ix += 1
-                    curr = 'y'
-                elif curr == 'y':
-                    y_cart[y_keys[iy]].append(value)
-                    #print(f'Appending {value} to {y_keys[iy]} @ {line_split[0]}, iy={iy}')
-                    iy += 1
-                    curr = 'z'
-                elif curr == 'z':
-                    z_cart[z_keys[iz]].append(value)
-                    #print(f'Appending {value} to {z_keys[iz]} @ {line_split[0]}, iz={iz}')
-                    iz += 1
-                    curr = 'x'
-
-    return(x_cart, y_cart, z_cart, times)
-
-def parse_cartesian(path):
+def parse_from_xvg(path, com=False):
     """
     parse_cartesian() parses a dataset of this type:
         # comments for .xvg reader
@@ -113,8 +71,8 @@ def parse_cartesian(path):
         exit()
 
     # Read only lines not containing '#'
-    comments = [line for line in lines if '@' in line]
-    data = [line for line in lines if '@' not in line and '#' not in line]
+    comments = tuple([line for line in lines if '@' in line])
+    data = tuple([line for line in lines if '@' not in line and '#' not in line])
 
     # Get atom numbers from the file using regex, create 3 dictionaries containing X Y Z values for atoms
     pattern = '[a-z]+\s+[0-9]+\s+[XYZ]*'
@@ -127,172 +85,136 @@ def parse_cartesian(path):
     z_cart = dict.fromkeys([re.search(pattern, line)[0] for line in comments if 'atom' in line and 'Z' in line], [])
     """
 
-    x_keys = [re.search(pattern, line)[0] for line in comments if 'atom' in line and 'X' in line]
-    y_keys = [re.search(pattern, line)[0] for line in comments if 'atom' in line and 'Y' in line]
-    z_keys = [re.search(pattern, line)[0] for line in comments if 'atom' in line and 'Z' in line]
-    x_cart, y_cart, z_cart = {}, {}, {}
-    for x_key, y_key, z_key in zip(x_keys, y_keys, z_keys):
-        x_cart[x_key] = []
-        y_cart[y_key] = []
-        z_cart[z_key] = []
+    # Get keys
+    # Creating a tuple from list comprehension is faster than other possibilities. https://stackoverflow.com/questions/16940293/why-is-there-no-tuple-comprehension-in-python
+    if com:
+        keys = ['com_x','com_y','com_z']
+    else:
+        x_keys = tuple([re.search(pattern, line)[0] for line in comments if 'atom' in line and 'X' in line])
+        y_keys = tuple([i.replace('X','Y') for i in x_keys])
+        z_keys = tuple([i.replace('X','Z') for i in x_keys])
+        keys = [i for i in zip(x_keys, y_keys, z_keys)]
+        keys = [x for xs in keys for x in xs]
+    #####
 
-    # Init multiprocessing.Pool()
-    pool = mp.Pool(mp.cpu_count())
-    # Assign coordinates to a dictionary
-    x_cart, y_cart, z_cart, times = pool.apply(assign_to_dict, args=(data, x_cart, y_cart, z_cart))
-    pool.close()
+    # Split lines and transform into pandas
+    vectors_df = pd.DataFrame(data)
+    vectors_df = vectors_df[0].str.split('\t', expand=True)
+    vectors_df.iloc[:,-1] = vectors_df.iloc[:,-1].str.replace('\n','')
+    times_df = vectors_df[0] # => simulation times
+    vectors_df = vectors_df.drop(columns=vectors_df.columns[0], axis=1)
+    vectors_df.columns = keys
+    #####
 
-    return(x_cart, y_cart, z_cart, times)
+    return(vectors_df.astype(np.float32))
 
-def parse_com(path):
-    """
-    parse_com() parses a dataset of this type:
-        # comments for .xvg reader
-        @ notes about the plot for .xvg reader (names, legends etc.)
-        25000	6.4015	6.40326	3.00702
-        25010	6.40063	6.40136	3.00749
-        25020	6.40089	6.39934	3.00821
-        25030	6.40104	6.40203	3.01097
-        25040	6.39872	6.40116	3.00877
-        25050	6.39943	6.39993	3.00686
+def parse_from_pdb(path):
 
-    The datalines (no @ or #) read as: at time 25000, the (X Y Z) of the center of mass of the molecule was (6.4015 6.40326 3.00702)
-
-
-    :return: assigned dictionaries of COM coordinates x_cart, y_cart, z_cart
-    """
-
+    #path='/run/timeshift/backup/IOCB/md/FDs/MSM/fitted_trajectories/VECTORS/pdz/run_1/short.pdb'
     try:
-        with open(path) as file:
-            lines = file.readlines()
+        from Bio.PDB import PDBParser
+        import warnings
+        with warnings.catch_warnings(): # Suppress these pesky BioPython warnings
+            warnings.simplefilter("ignore")
+            parser = PDBParser()
+            structure = parser.get_structure("struct", path)
     except FileNotFoundError:
         print(f'{path} does not exist')
         exit()
+    except ModuleNotFoundError:
+        print('Missing optional dependency biopython (pip3 install biopython), cannot read .pdb, will quit.')
+        exit()
+    coordinates_df = pd.DataFrame()
 
-    # Read only lines not containing '#'
-    comments = [line for line in lines if '@' in line]
-    data = [line for line in lines if '@' not in line and '#' not in line]
-    cart_x = {'com X' : []}
-    cart_y = {'com Y' : []}
-    cart_z = {'com Z' : []}
-    for dat in data:
-        dat_split = dat.replace('\n','').split()
-        cart_x['com X'].append(dat_split[1])
-        cart_y['com Y'].append(dat_split[2])
-        cart_z['com Z'].append(dat_split[3])
+    for i, model in enumerate(structure):
 
-    return(cart_x, cart_y, cart_z)
+        single_row = {}
+        atoms = model.get_atoms()
+        for j, atom in enumerate(atoms):
+            coords = list(atom.get_coord())
+            single_row[f'Atom {j} X'] = coords[0] / 10 # From A to nm
+            single_row[f'Atom {j} Y'] = coords[1] / 10
+            single_row[f'Atom {j} Z'] = coords[2] / 10
 
-def recalculate_vector(x, y, z, x_com=False, y_com=False, z_com=False):
-    """
-    Position vectors are by default in the Cartesian space, with (0 0 0) as the start. This means
-    that two structures can't be directly compared. Imagine a multidomain system of a PDZ3-TrpCage and another
-    with only PDZ3, thanks to centering of the structure in a different place in the cartesian space,
-    the two vectors could not be compared. That's why we use the Center of Mass (but beware, always use the center of mass
-    of the correct part of the molecule, if you're for example comparing domains!) as a reference point (0 0 0)/start
-    of the atom position vector.
+        if i == 0:
+            coordinates_df = pd.DataFrame(single_row, index=[i])
+        else:
+            single_row_series = pd.DataFrame(single_row, index=[i])
+            coordinates_df = pd.concat([coordinates_df, single_row_series])
 
-    :return: dictionary of lists of tuples of final vectors with starts in (COMx COMy COMz) and ends in (Atomx, atomy, atomz)
-    """
-    x_keys = list(x.keys())
-    y_keys = list(y.keys())
-    z_keys = list(z.keys())
+    print(coordinates_df)
+    exit()
 
-    new_vectors = {}
+    # Separate .pdb into frames by ENDMDL
 
-    # Trigger if COM recalculation method was chosen
-    if x_com and y_com and z_com:
-        com_x = x_com[list(x_com.keys())[0]]
-        com_y = y_com[list(y_com.keys())[0]]
-        com_z = z_com[list(z_com.keys())[0]]
 
-        with alive_bar(len(x_keys)) as bar:
-            print('Recalculating vectors')
-            for x_key, y_key, z_key in zip(x_keys, y_keys, z_keys):
-                x_in_time = x[x_key]
-                y_in_time = y[y_key]
-                z_in_time = z[z_key]
 
-                bar()
-                new_vectors[x_key[:-2]] = []
+def recalculate_vectors_com(coordinates_df, com_df):
 
-                """
-                Rewrite in NumPy, iterating is slow and stupid
-                """
-                for x_it, y_it, z_it, comx_it, comy_it, comz_it in zip(x_in_time, y_in_time, z_in_time, com_x, com_y, com_z):
-                    #print('COM: ',comx_it, comy_it, comz_it, f' @ {time}', 'COORD', x_it, y_it, z_it)
+    print(coordinates_df)
+    print(com_df)
+    num_cols = len(coordinates_df.columns)
+    num_atoms = int(num_cols/3)
 
-                    new_x = float(x_it) - float(comx_it)
-                    new_y = float(y_it) - float(comy_it)
-                    new_z = float(z_it) - float(comz_it)
-                    new_vectors[x_key[:-2]].append((new_x,new_y,new_z))
-    else:
-        with alive_bar(len(x_keys)) as bar:
-            print('Assigning SSAP aligned vectors')
-            for x_key, y_key, z_key in zip(x_keys, y_keys, z_keys):
-                x_in_time = x[x_key]
-                y_in_time = y[y_key]
-                z_in_time = z[z_key]
+    for column in coordinates_df.columns:
+        if 'X' in column:
+            i=0
+        elif 'Y' in column:
+            i=1
+        else:
+            i=2
+        coordinates_df[column] = coordinates_df[column] - com_df.iloc[:, i]
 
-                bar()
-                new_vectors[x_key[:-2]] = []
-
-                """
-                Rewrite in NumPy, iterating is slow and stupid
-                """
-                for x_it, y_it, z_it in zip(x_in_time, y_in_time, z_in_time):
-                    #print('COM: ',comx_it, comy_it, comz_it, f' @ {time}', 'COORD', x_it, y_it, z_it)
-
-                    new_x = float(x_it)
-                    new_y = float(y_it)
-                    new_z = float(z_it)
-                    new_vectors[x_key[:-2]].append((new_x,new_y,new_z))
-
-    return(new_vectors)
-
-def get_vectors(x_cart, y_cart, z_cart, x_com=False, y_com=False, z_com=False):
-    """
-    Multi-cpu caller for the recalculate_vector function.
-
-    :param x_cart:
-    :param y_cart:
-    :param z_cart:
-    :param x_com:
-    :param y_com:
-    :param z_com:
-    :return: Vectors starting from COM and ending in the atomic position
-    """
-    pool = mp.Pool(mp.cpu_count())
-    # Assign coordinates to a dictionary
-    vectors = pool.apply(recalculate_vector, args=(x_cart, y_cart, z_cart, x_com, y_com, z_com))
-    pool.close()
-    return(vectors)
+    return(coordinates_df)
 
 def main(argv=sys.argv[1:]):
     parser = argparse.ArgumentParser()
-    parser.add_argument("--f", type=str, help='Input traj -ox filepath (aligned by cartesian_prepare or in conjuction with --s COM file)', required=True)
+    parser.add_argument("--f", type=str, help='Input traj (.xvg from GROMACS gmx traj or .pdb of trajectory) (aligned for rotation+translation or for rotation in conjuction with --s COM file)', required=True)
     parser.add_argument("--s", type=str, help='OPTIONAL Input traj -com -ox filepath', required=False)
-    parser.add_argument("--o", type=str, help='Output.json (json)', required=True, default='cartesian_outfile')
+    parser.add_argument("--o", type=str, help='Output.json (json)', required=False, default='cartesian_outfile')
     parser.add_argument("--resi", type=str, help='OPTIONAL .pdb file for residue-to-atom assignment', required=False)
     global args
     args = parser.parse_args(argv)
-    x_cart, y_cart, z_cart, times = parse_cartesian(args.f)
+    if not args.o:
+        args.o = f'{args.f.strip(".xvg").strip(".pdb")}'
 
-    if args.s:
+    if '.xvg' in args.f:
+        traj_format = 'xvg'
+    elif '.pdb' in args.f:
+        traj_format = 'pdb'
+        print('Usage of .pdb format does not allow for COM fitting, will ignore --s argument if present')
+        args.s = False
+    else:
+        print('Unknown format of the --f input file (accepted: .xvg, .pdb), will quit.')
+        exit()
+
+    #x_cart, y_cart, z_cart, times = parse_cartesian(args.f)
+
+
+    if args.s: # If we're using COM fitting
         print('######')
         print('(!!) Recalculating vectors with COM positions as (0,0,0)')
         print('######')
-        x_com, y_com, z_com = parse_com(args.s)
-        vectors = get_vectors(x_cart, y_cart, z_cart, x_com, y_com, z_com)
+        com_df = parse_from_xvg(args.s, com=True)
+        coordinates_df = parse_from_xvg(args.f)
+        #vectors = get_vectors(x_cart, y_cart, z_cart, x_com, y_com, z_com) REMOVE
+        vectors = recalculate_vectors_com(coordinates_df, com_df)
+    elif traj_format == 'pdb':
+        print('######')
+        print('(!!) Using aligned trajectories instead of COM fitting')
+        print('(!!) Reading from .pdb')
+        print('######')
+        vectors = parse_from_pdb(args.f)
     else:
         print('######')
-        print('(!!) Using (possibly SSAP) aligned trajectories instead of COM fitting')
+        print('(!!) Using aligned trajectories instead of COM fitting')
+        print('(!!) Reading from GROMACS .xvg')
         print('######')
-        vectors = get_vectors(x_cart, y_cart, z_cart)
+        vectors = parse_from_xvg(args.f)
 
-    with open(args.o,'w') as fp:
-        print(f'Outputting vector dictionary to {args.o}')
-        json.dump(vectors, fp)
+    with open(args.o,'wb') as fp:
+        print(f'Outputting vectors to {args.o}')
+        vectors.to_parquet(fp, compression='snappy')
 
     if args.resi:
         try:
@@ -314,15 +236,10 @@ def main(argv=sys.argv[1:]):
             exit()
 
         # Assign atoms to residues
-        residues = {}
-        for line in frame_lines:
-            if line[2]+line[3] not in list(residues.keys()):
-                residues[line[2]+line[3]] = []
-            residues[line[2]+line[3]].append(line[0])
-
-        with open(f'{args.resi}_resis', 'w') as fp:
-            print(f'Outputting residue assignments to {args.resi}_resis')
-            json.dump(residues, fp)
+        resis_df = pd.DataFrame(frame_lines, columns=['atom_id','atom_type','resi_type','resi_id'])
+        with open(f'{args.o}_resis', 'wb') as fp:
+            print(f'Outputting residue assignments to {args.o}_resis')
+            resis_df.to_parquet(fp, compression='snappy')
 
 if __name__ == '__main__':
     main()
