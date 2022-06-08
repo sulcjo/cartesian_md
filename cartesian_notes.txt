@@ -2,8 +2,6 @@
 
 
 > cartesian.py should take paths of trajectories and index.ndx files only and prepare everything, then calculate vectors
-    .also make cartesian.py read the coordinates straight from the .pdb file
-    .Improve cartesian.py data handling (multithreading?)
 
 > cartesian_ana.py get rid of method selection? if not, test and fix all the different combinations
     - only keep "batch mode" vs "normal mode"

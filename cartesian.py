@@ -1,4 +1,5 @@
 import argparse
+from multiprocessing import Pool
 import numpy as np
 import pandas as pd
 import pyarrow
@@ -6,6 +7,9 @@ import re
 import sys
 
 """
+MODIFY THIS SNIPPET
+
+
 python cartesian.py [--f file containing coordinates of atoms <cart.xvg>] [--s file containing coordinates of molecular COMs <mol.xvg>]
 
 Cartesian requires an output file from gmx traj -f TRAJ.xtc -s TOP.tpr -ox CARTESIAN.xvg (vectors of atoms).
@@ -108,46 +112,86 @@ def parse_from_xvg(path, com=False):
 
     return(vectors_df.astype(np.float32))
 
-def parse_from_pdb(path):
+def parse_coordinates_from_pdb_model(model):  # takes a single pdb model as argument
 
-    #path='/run/timeshift/backup/IOCB/md/FDs/MSM/fitted_trajectories/VECTORS/pdz/run_1/short.pdb'
-    try:
-        from Bio.PDB import PDBParser
-        import warnings
-        with warnings.catch_warnings(): # Suppress these pesky BioPython warnings
-            warnings.simplefilter("ignore")
-            parser = PDBParser()
-            structure = parser.get_structure("struct", path)
-    except FileNotFoundError:
-        print(f'{path} does not exist')
-        exit()
-    except ModuleNotFoundError:
-        print('Missing optional dependency biopython (pip3 install biopython), cannot read .pdb, will quit.')
-        exit()
-    coordinates_df = pd.DataFrame()
+    model_lines = model.split('\n')
+    atom_rows_list = {}
 
-    for i, model in enumerate(structure):
+    keys = ((f'Atom {line_split[1]} X', f'Atom {line_split[1]} Y', f'Atom {line_split[1]} Z') for line_split in
+            [line.split() for line in model_lines if 'ATOM' in line or 'HETATM' in line])
+    flat_keys = [x for xs in keys for x in xs]
 
-        single_row = {}
-        atoms = model.get_atoms()
-        for j, atom in enumerate(atoms):
-            coords = list(atom.get_coord())
-            single_row[f'Atom {j} X'] = coords[0] / 10 # From A to nm
-            single_row[f'Atom {j} Y'] = coords[1] / 10
-            single_row[f'Atom {j} Z'] = coords[2] / 10
+    vals = ((np.float32(line_split[5]) / 10, np.float32(line_split[6]) / 10, np.float32(line_split[7]) / 10) for
+            line_split in [line.split() for line in model_lines if 'ATOM' in line or 'HETATM' in line])
+    flat_vals = [x for xs in vals for x in xs]
+    atom_rows_list = dict(zip(flat_keys, flat_vals))
 
-        if i == 0:
-            coordinates_df = pd.DataFrame(single_row, index=[i])
-        else:
-            single_row_series = pd.DataFrame(single_row, index=[i])
-            coordinates_df = pd.concat([coordinates_df, single_row_series])
+    if len(flat_keys) > 0:
+        return (atom_rows_list)
+    else:
+        return ({'Atom 1 X': None}) # Handles case of the last line
 
-    print(coordinates_df)
-    exit()
+def parse_from_pdb_serial(path):
+    """
+    A serial version of the cartesian .pdb parser.
+    First splits the .pdb into models, terminated by 'ENDMDL' line.
+    Then reads these models line by line and assigns dictionaries of atomics positions.
 
-    # Separate .pdb into frames by ENDMDL
+    :param path: Path to a .pdb file
+    :return: Pandas DataFrame of atomic positions
+    """
 
 
+    with open(path, 'r') as file:
+        lines = file.read()
+
+    rows_list = []
+
+    for model in lines.split('TER'):
+        rows_list.append(parse_coordinates_from_pdb_model(model))
+
+    coordinates_df = pd.DataFrame(rows_list)
+    coordinates_df = coordinates_df.dropna(how='all')
+    return(coordinates_df)
+
+def parse_from_pdb_async(path):
+    """
+    A parallel asynchronous version of the cartesian .pdb parser.
+    First splits the .pdb into models, terminated by 'ENDMDL' line.
+    Then reads these models line by line and assigns dictionaries of atomics positions (with args.pdbnp processes)
+
+    :param path: Path to a .pdb file
+    :return: Pandas DataFrame of atomic positions
+    """
+    pool = Pool(processes=args.pdbnp)
+
+
+    with open(path, 'r') as file:
+        lines = file.read()
+
+
+
+
+    def mp_caller(lines):
+        rows_list = []
+        def collect_results(res):
+            rows_list.append(res)
+
+        # for model in lines.split('TER'):
+        iterable = lines.split('TER')
+
+        # rows_list.append(parse_coordinates_from_model(model))
+        r = pool.map_async(parse_coordinates_from_pdb_model, iterable, callback=collect_results)
+        r.wait()
+        #
+        return(rows_list)
+
+    rows_list = mp_caller(lines)
+
+    coordinates_df = pd.DataFrame(rows_list[0])
+    coordinates_df = coordinates_df.dropna(how='all')
+
+    return(coordinates_df)
 
 def recalculate_vectors_com(coordinates_df, com_df):
 
@@ -173,6 +217,7 @@ def main(argv=sys.argv[1:]):
     parser.add_argument("--s", type=str, help='OPTIONAL Input traj -com -ox filepath', required=False)
     parser.add_argument("--o", type=str, help='Output.json (json)', required=False, default='cartesian_outfile')
     parser.add_argument("--resi", type=str, help='OPTIONAL .pdb file for residue-to-atom assignment', required=False)
+    parser.add_argument("--pdbnp", type=int, help='OPTIONAL number of asynchronous processes for .pdb parsing. =1 turns on serial backend, >1 parallel. =8 is recommended', required=False, default=8)
     global args
     args = parser.parse_args(argv)
     if not args.o:
@@ -188,9 +233,6 @@ def main(argv=sys.argv[1:]):
         print('Unknown format of the --f input file (accepted: .xvg, .pdb), will quit.')
         exit()
 
-    #x_cart, y_cart, z_cart, times = parse_cartesian(args.f)
-
-
     if args.s: # If we're using COM fitting
         print('######')
         print('(!!) Recalculating vectors with COM positions as (0,0,0)')
@@ -202,9 +244,12 @@ def main(argv=sys.argv[1:]):
     elif traj_format == 'pdb':
         print('######')
         print('(!!) Using aligned trajectories instead of COM fitting')
-        print('(!!) Reading from .pdb')
+        print('(!!) Reading from .pdb, this usually takes longer than reading from .xvg')
         print('######')
-        vectors = parse_from_pdb(args.f)
+        if args.pdbnp == 1:
+            vectors = parse_from_pdb_serial(args.f)
+        else:
+            vectors = parse_from_pdb_async(args.f)
     else:
         print('######')
         print('(!!) Using aligned trajectories instead of COM fitting')
