@@ -3,19 +3,6 @@ Combined cartesian_diff and cartesian_grid modules into cartesian_ana
 """
 
 import sys, argparse, os
-# ujson is recommended but not needed, speeds up json vectors loading
-"""
-try:
-    import ujson as json
-except ImportError:
-    try:
-        import simplejson as json
-    except ImportError:
-        import json
-"""
-
-# orjson could be used for speedup of json operations
-
 import json
 import numpy as np
 import pandas as pd
@@ -36,7 +23,6 @@ except ImportError:
     multiprocess = False
 
 from alive_progress import alive_bar
-from cartesian_diff import write_to_pdb_beta
 import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d import Axes3D
 import pandas as pd
@@ -44,54 +30,53 @@ from cartesian import __prepare_matplotlib
 from cartesian_diff import write_to_pdb_beta
 from matplotlib.widgets import TextBox, Slider, Button
 from mpl_toolkits.mplot3d.art3d import Poly3DCollection
+import math
 
 __prepare_matplotlib()
-
-
-class NumpyEncoder(json.JSONEncoder): # Encodes numpy ndarrays into serializable lists for json
-    def default(self, obj):
-        if isinstance(obj, np.ndarray):
-            return obj.tolist()
-        return json.JSONEncoder.default(self, obj)
 
 def analyse_space(vector):
     """
     :param vector: Cartesian.py produced MD trajectory atomic vectors
     :return: Pandas DataFrame of volumes explored by atoms, approximated with Convex Hull algorithm in 3D-space
     """
-    output_df = pd.DataFrame()
-    atom_keys = list(vector.keys())
-    with alive_bar(len(atom_keys)) as bar:
-        print('Calculating vector explored volumes')
-        for atom_key in atom_keys:
-            # Histogramming for plots
-            x = [i[0] for i in vector[atom_key]]
-            y = [i[1] for i in vector[atom_key]]
-            z = [i[2] for i in vector[atom_key]]
+    output_df = pd.DataFrame(columns=['atom', 'vol', 'volstep'])
+    num_atoms = math.ceil(len(vector.columns) / 3)
 
-            # Calculating exploration volume
-            arr = np.array([x,y,z])
-            arr = np.transpose(arr)
+
+    out_dict_list = []
+
+    with alive_bar(num_atoms) as bar:
+        print('Calculating vector explored volumes')
+
+        # Atoms in vector dataframe have data in three columns (x,y,z,)
+
+        for i in range(num_atoms):
+
+            lower = i*3 # Three columns per atom, we're counting triples
+
+            atom_coordinates = np.array(vector.iloc[:, lower:lower+3]).astype(np.float32)
+
             try:
-                hull = ss.ConvexHull(arr)
+                hull = ss.ConvexHull(atom_coordinates)
             except ss.qhull.QhullError:
                 print('QHullError, check your vectors! (are you sure you are not subtracting two identical ones?')
                 exit()
+
 
             # Obtained hull volumes, simplices (points), vertices (lines) of the shape
             #print(f'Vol={hull.volume} nm^3')
             #print(f'Simplices={hull.simplices}')
             #print(f'Vertices={hull.vertices}')
 
-            outvol = float(hull.volume)
-            outvolstep = float(outvol / (len(x)))
+            outvol = np.float32(hull.volume)
+            outvolstep = np.float32(outvol / (len(vector.iloc[:, lower]))) # steps = number of rows for the current atom X coordinate
 
-            out_series = pd.Series({'atom' : atom_key,
-                                    'vol': outvol,
-                                    'volstep': outvolstep
-                                    })
-            output_df = output_df.append(out_series, True)
+            out_dict_list.append({'atom':int(i), 'vol':outvol, 'volstep':outvolstep})
+
             bar()
+
+    output_df = pd.DataFrame(out_dict_list)
+
     return(output_df)
 
 def assign_into_grid_member(coordinate):
@@ -522,7 +507,6 @@ def write_to_pdb_beta(pdb, delta):
 
     return(new_pdb)
 
-
 # Helper function for better boolean argument handling
 def str2bool(v):
     if isinstance(v, bool):
@@ -534,7 +518,8 @@ def str2bool(v):
     else:
         raise(argparse.ArgumentTypeError('Boolean value expected.'))
 
-
+# Helper function
+strlower = lambda v: v.lower()
 
 def main(argv=sys.argv[1:]):
 
@@ -548,7 +533,8 @@ def main(argv=sys.argv[1:]):
 
 
     # cartesian grid unique arguments
-    parser.add_argument('--method', type=str, help='Method - grid, grid_scan, violin, volume, all; defaults to grid', required=False, default='grid')
+    parser.add_argument('--method', type=strlower, help='Method - grid, grid_scan, violin, volume, all; defaults to all', required=False, default='grid',
+                        choices=('grid','grid_scan','violin','volume','all'))
 
     ## Grid method specifics
     parser.add_argument('--grid', type=float, help='Grid size in nm, defaults to 0.5', required=False, default=0.5)
@@ -563,73 +549,64 @@ def main(argv=sys.argv[1:]):
     parser.add_argument('--plot_positions', type=str2bool, help='OPTIONAL plot positional violin plots', const=True, required=False, default=True, nargs='?')
     parser.add_argument('--plot_diff', type=str2bool, help='OPTIONAL plot explored volume by atom', const=True, required=False, default=True, nargs='?')
     parser.add_argument('--plot_violin', type=str2bool, help='OPTIONAL plot violin plots of spatial positions', const=True, required=False, default=True, nargs='?')
-
-
-
-
     ##
-
 
     global args
     args = parser.parse_args(argv)
 
-    # Set up default output directory, trajectory names
-    traj1_name = args.f.replace('.json', '')
-    if args.s:
-        traj2_name = args.s.replace('.json', '')
+    # Set up trajectory names from file names
+    expression = "[\w-]+?((?=\.)|(?=$))"
+    traj1_name = re.search(expression, args.f).group(0)
+    _ = lambda: re.search(expression, args.s).group(0) if args.s else False
+    traj2_name = _()
 
-    if not args.o:
-        if args.s:
-            args.o = f'{traj1_name}_{traj2_name}'
-        else:
-            args.o = traj1_name
-    if not os.path.exists(args.o):
-        os.makedirs(args.o)
     # Load vectors
     try:
-        with open(args.f) as file:
-            global vectors1
-            vectors1 = json.load(file)
-
+        global vectors1
+        vectors1 = pd.read_parquet(args.f)
     except FileNotFoundError:
         print(f'{args.f} not found, will quit.')
         exit()
+    ##
+
+    # Prepare helper file for cartesian_batch.py if comparing two different trajectories
     if args.s:
         try:
-            with open(args.s) as file:
-                global vectors2
-                vectors2 = json.load(file)
-                # Append to a file that is later used to make sense of output folders for cartesian_batch.py
-                # Traj1, traj2, directory, dynamical data, conformational data
+            global vectors2
+            vectors2 = pd.read_parquet(args.s)
 
-                """
-                This part only works if you're using two trajectories, perhaps modify later, so it prints out an outputs.txt
-                file for cartesian_batch.py even if we're only interested in obtaining distributions with a single batch of trajectories
-                """
+            """
+            This part only works if you're using two trajectories, perhaps modify later, so it prints out an outputs.txt
+            file for cartesian_batch.py even if we're only interested in obtaining distributions with a single batch of trajectories
+            """
 
-                with open('outputs.txt', 'at') as file:
-                    if args.resi:
-                        diffname = 'diff_resis.csv'
-                    else:
-                        diffname = 'diff_atom.csv'
-                    confname = f'{args.o}_grid_g{args.grid}_p{args.pop_threshold}.csv'
-                    grids1name = f'{traj1_name}_grid_g{args.grid}.json'
-                    grids2name = f'{traj2_name}_grid_g{args.grid}.json'
-                    grids1count = f'{traj1_name}_grid_g{args.grid}_count.json'
-                    grids2count = f'{traj2_name}_grid_g{args.grid}_count.json'
+            with open('outputs.txt', 'at') as file: # This assumes that --method=all !
 
-                    file.write(f'{args.f},{args.s},{args.o},{diffname},{confname},{grids1name},{grids2name},{grids1count},{grids2count}\n')
+                diffname = 'diff_atom.csv'
+                confname = f'{args.o}_grid_g{args.grid}_p{args.pop_threshold}.csv'
+                grids1name = f'{traj1_name}_grid_g{args.grid}.json'
+                grids2name = f'{traj2_name}_grid_g{args.grid}.json'
+                grids1count = f'{traj1_name}_grid_g{args.grid}_count.json'
+                grids2count = f'{traj2_name}_grid_g{args.grid}_count.json'
+
+                file.write(f'{args.f},{args.s},{args.o},{diffname},{confname},{grids1name},{grids2name},{grids1count},{grids2count}\n')
 
         except:
             print(f'{args.s} not found, will proceed with only one vector file analysis, obtained from --f')
             args.s = False
+    ##
 
+    # Setup output directory name and create it if necessary
+    _ = lambda: args.o if args.o else (f'{traj1_name}_{traj2_name}_out' if args.s else f'{traj1_name}_out')
+    args.o = _()
+    print(args.o)
+    if not os.path.exists(args.o):  # Fix this, only take the name of the args.f and args.s, not the whole path!
+        os.makedirs(args.o)
+    ##
 
-
-
-
-    if str.lower(args.method) == 'volume' or str.lower(args.method) == 'all':
+    if args.method == 'volume' or args.method == 'all':
         output_df1 = analyse_space(vectors1)
+
         output_df1 = output_df1.rename(columns={
             'atom': traj1_name,
             'vol': f'V({traj1_name})',
@@ -638,7 +615,6 @@ def main(argv=sys.argv[1:]):
 
         if args.s:
 
-            traj2_name = args.s.replace('.json', '')
             output_df2 = analyse_space(vectors2)
             output_df2 = output_df2.rename(columns={
                 'atom': traj2_name,
@@ -656,64 +632,16 @@ def main(argv=sys.argv[1:]):
 
             output_df = output_df.join(delta)
             output_df.loc[output_df.index[0], f'SUMV({traj1_name})'] = tot_explored_volume_1
-            output_df.loc[output_df.index[0], f'SUMV({traj1_name})/step'] = tot_explored_volume_1 / len(
-                list(vectors1.keys()))
+            output_df.loc[output_df.index[0], f'SUMV({traj1_name})/step'] = tot_explored_volume_1 / len(vectors1)
             output_df.loc[output_df.index[0], f'SUMV({traj2_name})'] = tot_explored_volume_2
-            output_df.loc[output_df.index[0], f'SUMV({traj2_name})/step'] = tot_explored_volume_2 / len(
-                list(vectors2.keys()))
+            output_df.loc[output_df.index[0], f'SUMV({traj2_name})/step'] = tot_explored_volume_2 / len(vectors2)
         else:
             output_df = output_df1
             tot_explored_volume_1 = output_df[f'V({traj1_name})'].sum()
             output_df.loc[output_df.index[0], f'SUMV({traj1_name})'] = tot_explored_volume_1
-            output_df.loc[output_df.index[0], f'SUMV({traj1_name})/step'] = tot_explored_volume_1 / len(
-                list(vectors1.keys()))
+            output_df.loc[output_df.index[0], f'SUMV({traj1_name})/step'] = tot_explored_volume_1 / len(vectors1)
 
-        output_df.to_csv(f'{args.o}/diff_atom.csv', float_format='{:.12f}')
-
-        if args.resi:
-            output_residue_df = pd.DataFrame()
-            try:
-                with open(args.resi) as file:
-                    resi_assignment = json.load(file)
-            except FileNotFoundError:
-                print(f'{args.resi} not found, will quit.')
-                exit()
-
-            residue_keys = list(resi_assignment.keys())
-            output_df = output_df.set_index(traj1_name)
-
-            for i, key in enumerate(residue_keys):
-                atoms_in_residue = resi_assignment[key]
-                min_atom = atoms_in_residue[0]
-                max_atom = atoms_in_residue[-1]
-                sum_vol1 = output_df.loc[f'atom {min_atom}':f'atom {max_atom}', f'V({traj1_name})'].sum()
-                sum_vol1_step = output_df.loc[f'atom {min_atom}':f'atom {max_atom}', f'V({traj1_name})/step'].sum()
-
-                if args.s:
-                    sum_vol2 = output_df.loc[f'atom {min_atom}':f'atom {max_atom}', f'V({traj2_name})'].sum()
-                    sum_vol2_step = output_df.loc[f'atom {min_atom}':f'atom {max_atom}', f'V({traj2_name})/step'].sum()
-                    residue_df = pd.DataFrame({
-                        f'residue': key,
-                        f'V({traj1_name})': sum_vol1,
-                        f'V({traj1_name})/step': sum_vol1_step,
-                        f'V({traj2_name})': sum_vol2,
-                        f'V({traj2_name})/step': sum_vol2_step
-                    }, index=[key])
-                else:
-                    residue_df = pd.DataFrame({
-                        f'residue': key,
-                        f'V({traj1_name})': sum_vol1,
-                        f'V({traj1_name})/step': sum_vol1_step,
-                    }, index=[key])
-
-                output_residue_df = output_residue_df.append(residue_df)
-
-            if args.s:
-                delta_resi = output_residue_df[f'V({traj2_name})'] - output_residue_df[f'V({traj1_name})']
-                delta_resi = pd.DataFrame(delta_resi, columns=['V_delta'])
-                output_residue_df = output_residue_df.join(delta_resi)
-
-            output_residue_df.to_csv(f'{args.o}/diff_resi.csv')
+        output_df.to_csv(f'{args.o}/diff_atom.csv')
 
         if args.pdbs:
             if not args.s:
@@ -733,39 +661,22 @@ def main(argv=sys.argv[1:]):
             # Plot atom-wise diff
             fig, ax = plt.subplots(figsize=(15, 10))
             vol_atoms_1 = output_df[f'V({traj1_name})']
-            name_atoms_1 = list(vectors1.keys())
-            name_atoms_1 = [re.findall(r'\d+', i)[0] for i in name_atoms_1]
-            name_atoms_1 = list(map(int, name_atoms_1))
-            ax.plot(name_atoms_1, vol_atoms_1, color='blue', label=args.f)
+            name_atoms_1 = output_df[traj1_name]
+            ax.plot(name_atoms_1, vol_atoms_1, color='blue', label=traj1_name)
+
             if args.s:
                 vol_atoms_2 = output_df[f'V({traj2_name})']
-                name_atoms_2 = list(vectors2.keys())
-                name_atoms_2 = [re.findall(r'\d+', i)[0] for i in name_atoms_2]
-                name_atoms_2 = list(map(int, name_atoms_2))
-                ax.plot(name_atoms_2, vol_atoms_2, color='orange', label=args.s)
+                name_atoms_2 = output_df[traj2_name]
+                ax.plot(name_atoms_2, vol_atoms_2, color='orange', label=traj2_name)
             ax.set_xlabel('Atom number')
             ax.set_ylabel('Explored volume / nm^3')
             ax.legend()
             plt.savefig(f'{args.o}/diff_plot_atom.png', dpi=300)
 
-            if args.resi:
-                fig_resi, ax_resi = plt.subplots(figsize=(15, 10))
-                vol_atoms_1 = output_residue_df[f'V({traj1_name})']
-                name_atoms_1 = output_residue_df.index
-                plt.xticks(rotation=90)
-                ax_resi.plot(name_atoms_1, vol_atoms_1, color='blue', label=args.f)
-                if args.s:
-                    vol_atoms_2 = output_residue_df[f'V({traj2_name})']
-                    name_atoms_2 = output_residue_df.index
-                    plt.xticks(rotation=90)
-                    ax_resi.plot(name_atoms_2, vol_atoms_2, color='orange', label=args.s)
-                ax_resi.set_xlabel('Residue number')
-                ax_resi.set_ylabel('(sum by atoms) Explored volume / nm^3')
-                ax_resi.legend()
-                plt.savefig(f'{args.o}/diff_plot_resi.png', dpi=300)
-            plt.show()
+            plt.show() # use only one plt.show() at the end
         global VOLDF
         VOLDF = output_df
+        exit()
 
     if str.lower(args.method) == 'grid' or str.lower(args.method) == 'all':
 
