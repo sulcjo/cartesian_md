@@ -82,7 +82,7 @@ def analyse_space(vector):
 def grid(vectors):
 
 
-    divided = (vectors / args.grid).astype(np.int32)  # Divide all cells by args.grid #
+    divided = (vectors / args.grid).astype(np.int16)  # Divide all cells by args.grid #
 
     import time
     start_time = time.time()
@@ -110,21 +110,41 @@ def grid(vectors):
     for triple in range(number_of_triples):
         #print(triple)
         lowcol = triple*3
+
+        # XYZ values from three columns into a single column. String of form 'x,y,z'
         triple_arr = divided.iloc[:, lowcol:lowcol+3].to_numpy().reshape(-1,3)
-        triplize = lambda tr: f'{tr[0]},{tr[1]},{tr[2]}'
-        triplized = np.apply_along_axis(triplize, 0, triple_arr)
+        print("--- %s A:prepared np triple_arr---" % (time.time() - start_time))
 
 
-        #print(triple_df)
+        # Variant np.unique solution
         #uniq, counts = np.unique(triple_arr, axis=0, return_counts=True)
+
+        # pd.unique solution
+        triplize = lambda tr: f'{tr[0]},{tr[1]},{tr[2]}'
+        #triplized = np.apply_along_axis(triplize, 1, triple_arr)
+        triplized = tuple(map(triplize, triple_arr))
+        print("--- %s B: triplized---" % (time.time() - start_time))
+
+
         uniq = pd.value_counts(triplized)
+        print("--- %s C: Uniques found by pd---" % (time.time() - start_time))
+
+        count = uniq.values
+        detriplize = lambda tr: np.array(tr.split(','))
+        uniq = map(detriplize,uniq.index.values)
+        print("--- %s D: detriplized---" % (time.time() - start_time))
+
+        #print(uniq)
+        #print(count)
+
         list_of_triple_dfs.append(uniq)
         #print(pd.DataFrame(uniq))
         #print(pd.DataFrame(counts))
-    print(pd.DataFrame(list_of_triple_dfs))
+    print(pd.DataFrame(list_of_triple_dfs).T)
     print("--- %s Uniques ided {}---" % (time.time() - start_time))
 
     # 12.5 seconds with np.unique(triple_arr)
+    # 15.6 seconds with pd.unique and lambdas for modifying using maps
 
 
     """
