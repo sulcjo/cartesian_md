@@ -79,121 +79,148 @@ def analyse_space(vector):
 
     return(output_df)
 
-def assign_into_grid_member(coordinate):
-    # print(coordinate)
-    if (coordinate / args.grid).is_integer():
-        # if the atom coordinate is a whole number, we want to make it a 50 % chance it will be
-        # assigned to the lower grid or 50 % to upper grid (so grids are, with enough samples, of the same size)
-        if coordinate % 2 == 0:  # had if atomX % 2 ==0 ; WEIRD? !!!!!
-            grid_x = (
-                             coordinate / args.grid) - 1  # If the atomX is an even number, assign to "the left" (into lower grid member)
-        else:
-            grid_x = coordinate / args.grid  # If odd, assign to higher grid member
-    else:
-        grid_x = math.floor(coordinate / args.grid)  # Assign into the grid member
-    return (int(grid_x))
-
-def atom_atomic_grids_asynch(key):
-    new_grids = []
-    atomXs = [vector[0] for vector in glob_vectors[key]]
-    atomYs = [vector[1] for vector in glob_vectors[key]]
-    atomZs = [vector[2] for vector in glob_vectors[key]]
-    for atomX, atomY, atomZ in zip(atomXs, atomYs, atomZs):
-        new_grid_tuple = [None, None, None]
-        new_grid_tuple[0] = assign_into_grid_member(atomX)
-        new_grid_tuple[1] = assign_into_grid_member(atomY)
-        new_grid_tuple[2] = assign_into_grid_member(atomZ)
-        new_grids.append(tuple(new_grid_tuple))
-    return_dict = {}
-    return_dict[key] = tuple(new_grids)
-
-    return (return_dict)
-
 def grid(vectors):
-    vectors_keys = list(vectors.keys())
 
-    def scan_through_grid(vector):
-        vectors_grid_positions = {}
 
-        """
-        Scan for each of the atoms in vector dict
-        If there are grid points (0.0, 0.5, 1.0, 1.5) and there's two coordinates (0.5, 1.0),
-        the first coordinate=0.5 will be assigned to the first grid (0.0-0.5), the second coordinate=1.0
-        will be assigned to 3rd grid (1.0-1.5). This is to solve uncertainty in assigning and with big enough
-        dataset, statistically the probabilities should both be 50 % and error caused by this should "cancel out"
-        somewhat.        
+    divided = (vectors / args.grid).astype(np.int32)  # Divide all cells by args.grid #
 
-        As compared to the previous calculation method, where grids were pre-assigned and then several nested for loops were used,
-        we're using simple math to assign coordinates into correct brackets. This is much faster and much more elegant.        
-        """
-
-        global glob_vectors
-        glob_vectors = vectors
-        glob_vectors_keys = tuple(glob_vectors.keys())
-
-        """
-        Improve with numpy or pandas, apply the function to the whole array,
-        or use Python mapping, don't iterate       
-
-        """
-
-        atomic_grids = {}
-        if args.mp:
-
-            print(f'Using multiprocessing with {args.mp}')
-            # Assign coordinates to a dictionary
-            pool = mp.Pool(args.mp)
-
-            atomic_grids = pool.map_async(atom_atomic_grids_asynch, glob_vectors_keys).get()
-            # atomic_grids[atom] = result.get()
-            pool.close()
-            pool.join()
-            atomic_grids = {list(grid_tuple.keys())[0]: tuple(grid_tuple.values())[0] for grid_tuple in atomic_grids}
-
-        else:
-            print('NOT using multiprocessing')
-            for atom in vectors_keys:
-                atomic_grids[atom] = []
-
-                atomXs = [vector[0] for vector in vector[atom]]
-                atomYs = [vector[1] for vector in vector[atom]]
-                atomZs = [vector[2] for vector in vector[atom]]
-
-                for atomX, atomY, atomZ in zip(atomXs, atomYs, atomZs):
-                    new_grid_tuple = [None, None, None]
-                    new_grid_tuple[0] = assign_into_grid_member(atomX)
-                    new_grid_tuple[1] = assign_into_grid_member(atomY)
-                    new_grid_tuple[2] = assign_into_grid_member(atomZ)
-                    atomic_grids[atom].append(new_grid_tuple)
-
-        return (atomic_grids)
+    import time
+    start_time = time.time()
 
     """
-    Return unique returns only unique grid members
-    and the "population" of them (how many times the vector
+    Atomic coordinates are assigned into 3D histogram bins with binning parameter set by args.bin.
+    In the unlikely case that a certain coordinate is on the binning boundary (binning=1 ; coordinate=2.0 for example)
+    the coordinate always goes into the "bin on the left". Returns two DataFrames, one containing unique grids for each atom XYZ value,
+    the other one containing corresponding counts (how many times the vector
     visited these grid members during the trajectory)
+    :param vectors:
+    :return: Atomic coordinates as bin positions in XYZ, only unique members and their counts (two DFs)
+    """
+    # Contrary to the old solution, all values that are on the bin border (bin=1 ; values like 2.0, 3.0, 1.0) go "to the left" bin
+    # i.e. Coordinate=2.0 / Bin=1.0 ends up in bin #2
+
+    number_of_triples = int(len(divided.columns)/3)
+    list_of_triple_dfs = []
+
+    # np.unique slower than pd.unique, which uses hash-tables to lookup the unique values
+    # but pandas can't work on three numerical values at once unlike numpy which can find unique values in 3,n arrays
+    # join XYZ columns into strings (one string for one atom in one observation)
+    # then find unique strings using pd.unique. Then split back into numerical DataFrame with str.split(',')
+
+    for triple in range(number_of_triples):
+        #print(triple)
+        lowcol = triple*3
+        triple_arr = divided.iloc[:, lowcol:lowcol+3].to_numpy().reshape(-1,3)
+        triplize = lambda tr: f'{tr[0]},{tr[1]},{tr[2]}'
+        triplized = np.apply_along_axis(triplize, 0, triple_arr)
+
+
+        #print(triple_df)
+        #uniq, counts = np.unique(triple_arr, axis=0, return_counts=True)
+        uniq = pd.value_counts(triplized)
+        list_of_triple_dfs.append(uniq)
+        #print(pd.DataFrame(uniq))
+        #print(pd.DataFrame(counts))
+    print(pd.DataFrame(list_of_triple_dfs))
+    print("--- %s Uniques ided {}---" % (time.time() - start_time))
+
+    # 12.5 seconds with np.unique(triple_arr)
+
+
+    """
+        global i
+        i = 0
+        def join_triple(x, yz):
+            global i
+            #print(x,yz[0].iloc[0], yz[1].iloc[iter])
+            new = (x, yz[0].iloc[i], yz[1].iloc[i])
+            i += 1
+            return(new)
+
+        #join_triple = lambda x, yz: (x, yz[0][iter], yz[1][iter]), iter+=1
+        new_tuple_triple = x_df.combine((y_df,z_df), join_triple)
+
+
+        #print(new_tuple_triple)
+        print("--- %s B join triple---" % (time.time() - start_time))
+
+        new_tuple_triple.columns = [triple_df.columns[0]]
+        list_of_triple_dfs.append(new_tuple_triple)
+        print("--- %s C rename and append new triple---" % (time.time() - start_time))
+
+    joint_vectors = pd.DataFrame(list_of_triple_dfs)
     """
 
-    # Scan through the grid space for vectors
-    grid_pop_vectors = scan_through_grid(vectors)
 
-    return (grid_pop_vectors)
+    exit()
+    """
 
-def grid_rms(grid1, grid2, grid_count1, grid_count2):
-    atom1_keys = list(grid1.keys())
-    atom2_keys = list(grid2.keys())
-    if len(atom1_keys) != len(atom2_keys):
-        print(
-            'WARNING grid-datasets used for RMS calculation are of different size, RMS values will suffer some uncertainty, atomic indices will be assigned from the second trajectory!')
+    # Find unique triples straight away, no concatenating in pandas
 
-    rmsd_lst = {}
+    columns = divided.columns
+    uniq_list, count_list = [], []
+
+    for column in columns:
+        nuniq_series = divided[column].value_counts(normalize=False)
+
+        uniq_list.append(nuniq_series.index.values.astype(np.int32))
+        count_list.append(nuniq_series.values.astype(np.int32))
+
+    uniq_df = pd.DataFrame(uniq_list, index=columns).T
+    count_df = pd.DataFrame(count_list, index=columns).T
+    return (uniq_df, count_df)
+
+def grid_rms(grid_unq1, grid_unq2, grid_count1, grid_count2):
+
+    colsno_1 = len(grid_unq1.columns)
+    colsno_2 = len(grid_unq2.columns)
+
+    number_of_triples1 = int(colsno_1/3)
+    number_of_triples2 = int(colsno_2/3)
+    number_of_triples = min(number_of_triples1, number_of_triples2) # Handles cases where one of the datasets has less atoms
+
+    operations_no = int(math.ceil((colsno_1 + colsno_2) / 6))
+
+    if colsno_1 != colsno_2:
+        print('WARNING grid-datasets used for RMS calculation are of different size, RMS value may be faulty. Will iterate through'
+              'atoms until one of the datasets runs out.')
 
     # two lens, ceil and /2 because datasets can theoretically have different size
     # this way the bar really calculates progress in such a case
-    with alive_bar(int(math.ceil(len(atom1_keys) + len(atom2_keys)) / 2)) as bar:
+    with alive_bar(operations_no) as bar:
         print(f'Calculating inter-grid RMS using gridsize {args.grid} nm')
-        for key1, key2 in zip(atom1_keys, atom2_keys):
+        for triple_id in range(number_of_triples): # This works even if one of the datasets has less atoms
             rmsd_sum = 0
+
+            lower_col = triple_id*3
+            upper_col = lower_col+3
+            current_triple_columns_1 = grid_unq1.iloc[:, lower_col:upper_col]
+            current_triple_columns_2 = grid_unq2.iloc[:, lower_col:upper_col]
+            current_triple_columns_count_1 = grid_count1.iloc[:, lower_col:upper_col]
+            current_triple_columns_count_2 = grid_count2.iloc[:, lower_col:upper_col]
+
+            xcol1 = current_triple_columns_1.iloc[:,0]
+            xcol2 = current_triple_columns_2.iloc[:,0]
+            xcol1_count = current_triple_columns_count_1.iloc[:,0]
+            xcol2_count = current_triple_columns_count_2.iloc[:,0]
+
+            ycol1 = current_triple_columns_1.iloc[:, 1]
+            ycol2 = current_triple_columns_2.iloc[:, 1]
+            ycol1_count = current_triple_columns_count_1.iloc[:, 1]
+            ycol2_count = current_triple_columns_count_2.iloc[:, 1]
+
+            zcol1 = current_triple_columns_1.iloc[:, 2]
+            zcol2 = current_triple_columns_2.iloc[:, 2]
+            zcol1_count = current_triple_columns_count_1.iloc[:, 2]
+            zcol2_count = current_triple_columns_count_2.iloc[:, 2]
+
+
+            rows_in_col1 = len(current_triple_columns_1.iloc[:,0])
+            rows_in_col2 = len(current_triple_columns_2.iloc[:,0])
+
+            
+
+            
             atom1_xs = [x[0] for x in grid1[key1]]
             atom1_ys = [x[1] for x in grid1[key1]]
             atom1_zs = [x[2] for x in grid1[key1]]
@@ -205,29 +232,31 @@ def grid_rms(grid1, grid2, grid_count1, grid_count2):
             current_atom_grid_count2 = grid_count2[key2]
             # current_atom_internal_rms = int_rms_1[key1]
             # current_atom_2_internal_rms = int_rms_2[key2]
-
-            # For i-th entry in atom1(K)
+            
+            
+            # For i-th entry in first trajectory grids, for j-th entry in second trajectory grids
             i = 0
             j = 0
-            while i < len(atom1_xs):
 
-                if j == len(atom2_xs):
+            while i <= rows_in_col1:
+
+                if j == rows_in_col2:
                     i += 1
                     j = 0
                     continue
 
-                rmsd_sum += (current_atom_grid_count[i] * current_atom_grid_count2[j]) * (
-                            atom1_xs[i] - atom2_xs[j]) ** 2 + (atom1_ys[i] - atom2_ys[j]) ** 2 + (
-                                        atom1_zs[i] + atom2_zs[j]) ** 2
+                rmsd_sum += ((xcol1_count[i]+ycol1_count[i]+zcol1_count[i]) *  (xcol2_count[i]+ycol2_count[i]+zcol2_count[i])) * \
+                            (xcol1[i] - xcol2[j]) ** 2 + (ycol1[i] - ycol2[j]) ** 2 + (zcol1[i] + zcol2[j]) ** 2
                 j += 1
 
             rmsd = math.sqrt((1 / sum(current_atom_grid_count)) * rmsd_sum)
             # rmsd += -(current_atom_internal_rms + current_atom_2_internal_rms) Subtract internal RMS of the atoms
             # print(current_atom_internal_rms)
             rmsd_lst[f'{key1}-{key2}'] = rmsd
+            
             bar()
     return (rmsd_lst)
-
+    """
 def internal_grid_rms(grid, grid_count):
     atom_keys = list(grid.keys())
     with alive_bar(len(atom_keys)) as bar:
@@ -370,55 +399,6 @@ def plot_cubes(data, color, label, ax):
     ax.scatter(-100, -100, -100, color=color, label=label, marker='s', s=50)
 
     # plt.show()
-
-def return_unique(grid_pop_vectors):
-    grid_keys = list(grid_pop_vectors.keys())
-    new_dict = {}
-    count_dict = {}
-
-    backend = 1  # Numpy backend doesn't seem to work later when asking for dataset differences and intersection
-
-    if backend == 0:
-        for grid_key in grid_keys:
-            new_dict[grid_key] = []
-            count_dict[grid_key] = []
-            print(f'Returning unique {grid_key}')
-            # For each grid visited by the atom
-            for grid_coordinates in grid_pop_vectors[grid_key]:
-                if not grid_coordinates in new_dict[grid_key]:
-
-                    # Throw away bins that have populations below args.pop_threshold, append the rest
-                    count = grid_pop_vectors[grid_key].count(grid_coordinates)
-                    if count > args.pop_threshold:
-                        new_dict[grid_key].append(grid_coordinates)
-                        count_dict[grid_key].append(count)
-
-    if backend == 1:
-        # Improved and faster with numpy
-        with alive_bar(len(grid_keys)) as bar:
-            print('Finding unique bins')
-            for grid_key in grid_keys:
-                current_vectors = np.array(grid_pop_vectors[grid_key])
-                uniqs, counts = np.unique(current_vectors, axis=0,
-                                          return_counts=True)  # Returns unique tuples of X,Y,Z (axis=0) and their counts in the original array (return_counts=True)
-                which_to_delete = []
-                for i, count in enumerate(counts):
-                    if count < args.pop_threshold:
-                        which_to_delete.append(i)
-                new_dict[grid_key] = np.delete(uniqs, which_to_delete, axis=0)
-                count_dict[grid_key] = np.delete(counts, which_to_delete, axis=0)
-                bar()
-    """
-    Returns something like this (new_dict)
-    {'p1': [[1, 0, 0], [-1, 0, -1]], 'p2': [[2, 2, 5], [1, 2, 5], [2, 2, 6]], 'p3': [[-9, -3, 3], [-10, -4, 3], [-10, -3, 3]]}
-    Read: particle 1 uniquely visited gridpoint (1,0,0) gridpoint (-1,0,-1).
-          particle 2 uniquelyvisidet gridpoint (2,2,5), gridpoint (1,2,5), gridpoint (2,2,6)
-    And this (count_dict)
-    {'p1': [2, 1], 'p2': [1, 1, 1], 'p3': [1, 1, 1]}
-    Read: particle 1 visited the first unique gridpoint in new_dict (1,0,0) 2x, the (-1,0,-1) gridpoint was visited once.
-
-    """
-    return (new_dict, count_dict)
 
 def set_ax_lims_3d(grids1, grids2, ax):
     """ Flatten the grids datasets, join them and find the lowest and highest gridpoint. Set ax limits and ticks """
@@ -563,7 +543,7 @@ def main(argv=sys.argv[1:]):
     # Load vectors
     try:
         global vectors1
-        vectors1 = pd.read_parquet(args.f)
+        vectors1 = pd.read_parquet(args.f).astype(np.float32)
     except FileNotFoundError:
         print(f'{args.f} not found, will quit.')
         exit()
@@ -573,7 +553,7 @@ def main(argv=sys.argv[1:]):
     if args.s:
         try:
             global vectors2
-            vectors2 = pd.read_parquet(args.s)
+            vectors2 = pd.read_parquet(args.s).astype(np.float32)
 
             """
             This part only works if you're using two trajectories, perhaps modify later, so it prints out an outputs.txt
@@ -584,10 +564,10 @@ def main(argv=sys.argv[1:]):
 
                 diffname = 'diff_atom.csv'
                 confname = f'{args.o}_grid_g{args.grid}_p{args.pop_threshold}.csv'
-                grids1name = f'{traj1_name}_grid_g{args.grid}.json'
-                grids2name = f'{traj2_name}_grid_g{args.grid}.json'
-                grids1count = f'{traj1_name}_grid_g{args.grid}_count.json'
-                grids2count = f'{traj2_name}_grid_g{args.grid}_count.json'
+                grids1name = f'{traj1_name}_grid_g{args.grid}.cart'
+                grids2name = f'{traj2_name}_grid_g{args.grid}.cart'
+                grids1count = f'{traj1_name}_grid_g{args.grid}_count.cart'
+                grids2count = f'{traj2_name}_grid_g{args.grid}_count.cart'
 
                 file.write(f'{args.f},{args.s},{args.o},{diffname},{confname},{grids1name},{grids2name},{grids1count},{grids2count}\n')
 
@@ -663,7 +643,7 @@ def main(argv=sys.argv[1:]):
             vol_atoms_1 = output_df[f'V({traj1_name})']
             name_atoms_1 = output_df[traj1_name]
             ax.plot(name_atoms_1, vol_atoms_1, color='blue', label=traj1_name)
-
+            # Rework plotting with seaborn instead of matplotlib
             if args.s:
                 vol_atoms_2 = output_df[f'V({traj2_name})']
                 name_atoms_2 = output_df[traj2_name]
@@ -676,34 +656,33 @@ def main(argv=sys.argv[1:]):
             plt.show() # use only one plt.show() at the end
         global VOLDF
         VOLDF = output_df
-        exit()
 
-    if str.lower(args.method) == 'grid' or str.lower(args.method) == 'all':
+    if args.method == 'grid' or args.method == 'all':
 
-        atomic_grid = grid(vectors1)
-        atomic_grid_uniq, grid_count = return_unique(atomic_grid)
-        # Calculate original points amount
-        vector1_keys = list(vectors1.keys())
-        vectors_num = sum([len(vectors1[key]) for key in vector1_keys])
-        # Calculate the total amount of gridpoints in the first datasets
-        grid1_keys = list(atomic_grid.keys())
-        grid1_size = sum([len(atomic_grid[i]) for i in grid1_keys])
-        # Calculate total amount of unique gridpoints
-        grid1_unq_size = sum([len(atomic_grid_uniq[i]) for i in grid1_keys])
+        atomic_grid_uniq, atomic_grid_count = grid(vectors1)
+        nongridded_vectors1_num = vectors1.count(numeric_only=True, axis=0).sum() # how many vectors before
+        gridded_vectors1_num = atomic_grid_uniq.count(numeric_only=True, axis=0).sum() # how many vectors after binning
+
+        nongridded_vectors2_num = 0
+        gridded_vectors2_num = 0
 
         if args.s:
-            atomic_grid_2 = grid(vectors2)
-            atomic_grid_2_uniq, grid_count_2 = return_unique(atomic_grid_2)
-            grid2_keys = list(atomic_grid.keys())
-            grid2_size = sum([len(atomic_grid[i]) for i in grid2_keys])
-            grid2_unq_size = sum([len(atomic_grid_2_uniq[i]) for i in grid2_keys])
-            rms = grid_rms(atomic_grid_uniq, atomic_grid_2_uniq, grid_count, grid_count_2)
+            atomic_grid_uniq2, atomic_grid_count2 = grid(vectors2)
+            nongridded_vectors2_num = vectors2.count(numeric_only=True, axis=0).sum()
+            gridded_vectors2_num = atomic_grid_uniq2.count(numeric_only=True, axis=0).sum()
+
+            rms = grid_rms(atomic_grid_uniq, atomic_grid_uniq2, atomic_grid_count, atomic_grid_count2)
+            exit()
+
             rms_out = pd.Series(rms).T
             rms_out = pd.DataFrame(rms_out, columns=[f'{traj1_name}/{traj2_name}'])
             rms_out.to_csv(f'{args.o}/{args.o}_grid_g{args.grid}_p{args.pop_threshold}.csv')
         else:
             grid2_size = 0
             grid2_unq_size = 0
+
+        print(f'Total amount of coordinates: {nongridded_vectors1_num + nongridded_vectors2_num}, '
+              f'after binning {gridded_vectors1_num + gridded_vectors2_num}')
 
         # Save grids for later use with cartesian_batch
         with open(f'{args.o}/{traj1_name}_grid_g{args.grid}.json', 'w') as file:
