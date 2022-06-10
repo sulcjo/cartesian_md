@@ -100,7 +100,8 @@ def grid(vectors):
     # i.e. Coordinate=2.0 / Bin=1.0 ends up in bin #2
 
     number_of_triples = int(len(divided.columns)/3)
-    list_of_triple_dfs = []
+    list_of_uniq_dfs = []
+    list_of_count_dfs = []
 
     # np.unique slower than pd.unique, which uses hash-tables to lookup the unique values
     # but pandas can't work on three numerical values at once unlike numpy which can find unique values in 3,n arrays
@@ -108,98 +109,67 @@ def grid(vectors):
     # then find unique strings using pd.unique. Then split back into numerical DataFrame with str.split(',')
 
     for triple in range(number_of_triples):
-        #print(triple)
+
+        # Column triple iterator
         lowcol = triple*3
 
         # XYZ values from three columns into a single column. String of form 'x,y,z'
         triple_arr = divided.iloc[:, lowcol:lowcol+3].to_numpy().reshape(-1,3)
-        print("--- %s A:prepared np triple_arr---" % (time.time() - start_time))
+
+        if args.gridbackend == 0:
+            # Variant np.unique solution
+            uniq, count = np.unique(triple_arr, axis=0, return_counts=True)
+
+            uniq = tuple(uniq.astype(np.int32)) # It works with tuples, with arrays pandas just expand everything
+            count = tuple(count.astype(np.int32))
+
+        else:
+            # pd.unique solution
+            triplize = lambda tr: f'{tr[0]},{tr[1]},{tr[2]}'
+            #triplized = np.apply_along_axis(triplize, 1, triple_arr)
+            triplized = tuple(map(triplize, triple_arr))
+
+            uniq = pd.value_counts(triplized)
+
+            count = uniq.values
+            detriplize = lambda tr: tuple(np.array(tr.split(',')).astype(np.int32))
+            uniq = tuple(map(detriplize, uniq.index.values))
+
+        list_of_uniq_dfs.append(uniq)
+        list_of_count_dfs.append(count)
+
+    uniq_df = pd.DataFrame(list_of_uniq_dfs).T
+    count_df = pd.DataFrame(list_of_count_dfs).T
 
 
-        # Variant np.unique solution
-        #uniq, counts = np.unique(triple_arr, axis=0, return_counts=True)
+    print("--- %s Uniques ided---" % (time.time() - start_time))
 
-        # pd.unique solution
-        triplize = lambda tr: f'{tr[0]},{tr[1]},{tr[2]}'
-        #triplized = np.apply_along_axis(triplize, 1, triple_arr)
-        triplized = tuple(map(triplize, triple_arr))
-        print("--- %s B: triplized---" % (time.time() - start_time))
+    # 11.8 seconds with np.unique(triple_arr)
+    # 15.1 seconds with pd.unique and lambdas for modifying using maps
 
-
-        uniq = pd.value_counts(triplized)
-        print("--- %s C: Uniques found by pd---" % (time.time() - start_time))
-
-        count = uniq.values
-        detriplize = lambda tr: np.array(tr.split(','))
-        uniq = map(detriplize,uniq.index.values)
-        print("--- %s D: detriplized---" % (time.time() - start_time))
-
-        #print(uniq)
-        #print(count)
-
-        list_of_triple_dfs.append(uniq)
-        #print(pd.DataFrame(uniq))
-        #print(pd.DataFrame(counts))
-    print(pd.DataFrame(list_of_triple_dfs).T)
-    print("--- %s Uniques ided {}---" % (time.time() - start_time))
-
-    # 12.5 seconds with np.unique(triple_arr)
-    # 15.6 seconds with pd.unique and lambdas for modifying using maps
-
-
-    """
-        global i
-        i = 0
-        def join_triple(x, yz):
-            global i
-            #print(x,yz[0].iloc[0], yz[1].iloc[iter])
-            new = (x, yz[0].iloc[i], yz[1].iloc[i])
-            i += 1
-            return(new)
-
-        #join_triple = lambda x, yz: (x, yz[0][iter], yz[1][iter]), iter+=1
-        new_tuple_triple = x_df.combine((y_df,z_df), join_triple)
-
-
-        #print(new_tuple_triple)
-        print("--- %s B join triple---" % (time.time() - start_time))
-
-        new_tuple_triple.columns = [triple_df.columns[0]]
-        list_of_triple_dfs.append(new_tuple_triple)
-        print("--- %s C rename and append new triple---" % (time.time() - start_time))
-
-    joint_vectors = pd.DataFrame(list_of_triple_dfs)
-    """
-
-
-    exit()
-    """
-
-    # Find unique triples straight away, no concatenating in pandas
-
-    columns = divided.columns
-    uniq_list, count_list = [], []
-
-    for column in columns:
-        nuniq_series = divided[column].value_counts(normalize=False)
-
-        uniq_list.append(nuniq_series.index.values.astype(np.int32))
-        count_list.append(nuniq_series.values.astype(np.int32))
-
-    uniq_df = pd.DataFrame(uniq_list, index=columns).T
-    count_df = pd.DataFrame(count_list, index=columns).T
-    return (uniq_df, count_df)
+    return(uniq_df, count_df)
 
 def grid_rms(grid_unq1, grid_unq2, grid_count1, grid_count2):
+    #print(grid_unq1)
+    #print(grid_count1)
 
+    #grid_unq1 = pd.read_parquet('/run/timeshift/backup/IOCB/md/FDs/MSM/fitted_trajectories/VECTORS/pdz/run_1/old_method_unique_grids/grids1')
+    #grid_unq2 = pd.read_parquet('/run/timeshift/backup/IOCB/md/FDs/MSM/fitted_trajectories/VECTORS/pdz/run_1/old_method_unique_grids/grids2')
+    #grid_count1 = pd.read_parquet('/run/timeshift/backup/IOCB/md/FDs/MSM/fitted_trajectories/VECTORS/pdz/run_1/old_method_unique_grids/grids1_count')
+    #grid_count2 = pd.read_parquet('/run/timeshift/backup/IOCB/md/FDs/MSM/fitted_trajectories/VECTORS/pdz/run_1/old_method_unique_grids/grids2_count')
+
+
+    import time
+    start_time = time.time()
+
+    # How many triples
     colsno_1 = len(grid_unq1.columns)
     colsno_2 = len(grid_unq2.columns)
 
-    number_of_triples1 = int(colsno_1/3)
-    number_of_triples2 = int(colsno_2/3)
-    number_of_triples = min(number_of_triples1, number_of_triples2) # Handles cases where one of the datasets has less atoms
+    # Prepare RMSmetric list (one value for one compared atom)
+    rms_lst = []
 
-    operations_no = int(math.ceil((colsno_1 + colsno_2) / 6))
+    number_of_triples = min(colsno_1, colsno_2) # Handles cases where one of the datasets has less atoms
 
     if colsno_1 != colsno_2:
         print('WARNING grid-datasets used for RMS calculation are of different size, RMS value may be faulty. Will iterate through'
@@ -207,76 +177,115 @@ def grid_rms(grid_unq1, grid_unq2, grid_count1, grid_count2):
 
     # two lens, ceil and /2 because datasets can theoretically have different size
     # this way the bar really calculates progress in such a case
-    with alive_bar(operations_no) as bar:
-        print(f'Calculating inter-grid RMS using gridsize {args.grid} nm')
-        for triple_id in range(number_of_triples): # This works even if one of the datasets has less atoms
-            rmsd_sum = 0
 
-            lower_col = triple_id*3
-            upper_col = lower_col+3
-            current_triple_columns_1 = grid_unq1.iloc[:, lower_col:upper_col]
-            current_triple_columns_2 = grid_unq2.iloc[:, lower_col:upper_col]
-            current_triple_columns_count_1 = grid_count1.iloc[:, lower_col:upper_col]
-            current_triple_columns_count_2 = grid_count2.iloc[:, lower_col:upper_col]
-
-            xcol1 = current_triple_columns_1.iloc[:,0]
-            xcol2 = current_triple_columns_2.iloc[:,0]
-            xcol1_count = current_triple_columns_count_1.iloc[:,0]
-            xcol2_count = current_triple_columns_count_2.iloc[:,0]
-
-            ycol1 = current_triple_columns_1.iloc[:, 1]
-            ycol2 = current_triple_columns_2.iloc[:, 1]
-            ycol1_count = current_triple_columns_count_1.iloc[:, 1]
-            ycol2_count = current_triple_columns_count_2.iloc[:, 1]
-
-            zcol1 = current_triple_columns_1.iloc[:, 2]
-            zcol2 = current_triple_columns_2.iloc[:, 2]
-            zcol1_count = current_triple_columns_count_1.iloc[:, 2]
-            zcol2_count = current_triple_columns_count_2.iloc[:, 2]
+    print("--- %s A: initial check&prep ---" % (time.time() - start_time))
 
 
-            rows_in_col1 = len(current_triple_columns_1.iloc[:,0])
-            rows_in_col2 = len(current_triple_columns_2.iloc[:,0])
+    print(f'Calculating inter-grid RMS using gridsize {args.grid} nm')
+    for col1, col2 in zip(grid_unq1.columns, grid_unq2.columns): # This works even if one of the datasets has less atoms
+        rmsd_sum = 0
 
-            
 
-            
-            atom1_xs = [x[0] for x in grid1[key1]]
-            atom1_ys = [x[1] for x in grid1[key1]]
-            atom1_zs = [x[2] for x in grid1[key1]]
-            atom2_xs = [x[0] for x in grid2[key2]]
-            atom2_ys = [x[1] for x in grid2[key2]]
-            atom2_zs = [x[2] for x in grid2[key2]]
 
-            current_atom_grid_count = grid_count1[key1]
-            current_atom_grid_count2 = grid_count2[key2]
-            # current_atom_internal_rms = int_rms_1[key1]
-            # current_atom_2_internal_rms = int_rms_2[key2]
-            
-            
-            # For i-th entry in first trajectory grids, for j-th entry in second trajectory grids
-            i = 0
-            j = 0
+        triple1 = pd.DataFrame(grid_unq1[col1].dropna().tolist())
 
-            while i <= rows_in_col1:
 
-                if j == rows_in_col2:
-                    i += 1
-                    j = 0
-                    continue
 
-                rmsd_sum += ((xcol1_count[i]+ycol1_count[i]+zcol1_count[i]) *  (xcol2_count[i]+ycol2_count[i]+zcol2_count[i])) * \
-                            (xcol1[i] - xcol2[j]) ** 2 + (ycol1[i] - ycol2[j]) ** 2 + (zcol1[i] + zcol2[j]) ** 2
-                j += 1
+        triple2 = pd.DataFrame(grid_unq2[col2].dropna().tolist())
+        xs2, ys2, zs2 = tuple(triple2[0]), tuple(triple2[1]), tuple(triple2[2])
 
-            rmsd = math.sqrt((1 / sum(current_atom_grid_count)) * rmsd_sum)
-            # rmsd += -(current_atom_internal_rms + current_atom_2_internal_rms) Subtract internal RMS of the atoms
-            # print(current_atom_internal_rms)
-            rmsd_lst[f'{key1}-{key2}'] = rmsd
-            
-            bar()
-    return (rmsd_lst)
-    """
+
+        triple1_counts = tuple(grid_count1[col1].dropna().tolist())
+
+
+        triple2_counts = pd.DataFrame(grid_count2[col2].dropna().tolist())
+
+
+
+
+        sum_counts1, sum_counts2 = sum(triple1_counts), sum(triple2_counts[0])
+
+        samples = sum_counts1*sum_counts2
+
+
+        # For i-th entry in first trajectory grids, for j-th entry in second trajectory grids
+        i = 0
+
+        matrix_x = []
+        matrix_y = []
+        matrix_z = []
+        matrix_weight = []
+
+
+        while i < len(triple1):
+
+            # X-term (single i with all j), Y-term, Z-term
+            x_term_i = triple1.iloc[i, 0] - xs2 # Create a series for i=1 minus all possible j
+            y_term_i = triple1.iloc[i, 1] - ys2
+            z_term_i = triple1.iloc[i, 2] - zs2
+
+            # Weights for all pairs
+            i_weight = np.array(triple1_counts[i] * triple2_counts, dtype=np.int32)
+
+
+            matrix_x.append(x_term_i)
+            matrix_y.append(y_term_i)
+            matrix_z.append(z_term_i)
+            matrix_weight.append(i_weight)
+
+            i += 1
+
+
+        for ix, iy, iz, iweight in zip(matrix_x, matrix_y, matrix_z, matrix_weight):
+            #print(ix)
+            #print(iy)
+            #print(iz)
+
+
+            ix = ix**2
+            iy = iy**2
+            iz = iz**2
+
+            ixyz = ix+iy+iz
+            ixyz_w = ixyz*iweight
+
+            rmsd_sum += ixyz_w.sum()
+
+        rmsd = math.sqrt((1 / samples) * rmsd_sum)
+
+        rms_lst.append(rmsd)
+
+    print("--- %s C: Sums calculated ---" % (time.time() - start_time))
+
+    fig, axs = plt.subplots()
+    import seaborn as sb
+    plotdata = pd.DataFrame(rms_lst)
+
+
+
+    #backend0 = pd.read_csv('/run/timeshift/backup/IOCB/md/FDs/MSM/fitted_trajectories/VECTORS/pdz/run_1/uniques_backend0.csv')
+    #sb.lineplot(data=backend0.iloc[:, 1], ax=axs, color='blue')
+
+    #df = pd.read_csv('//run/timeshift/backup/IOCB/md/FDs/MSM/fitted_trajectories/VECTORS/pdz/run_1/old_method_unique_grids/rms_grid01_skipno.csv')
+    df = pd.read_csv('/run/timeshift/backup/IOCB/md/FDs/MSM/fitted_trajectories/VECTORS/pdz/run_1/old_method_unique_grids/correct_grids_old.csv')
+    sb.lineplot(data=df.iloc[:, 1], ax=axs, color='red')
+
+
+    plotdata = plotdata
+    sb.lineplot(data=plotdata, ax=axs, color='green')
+    print(rms_lst)
+
+
+
+
+
+
+    plt.show()
+
+    exit()
+
+    return (rms_lst)
+
 def internal_grid_rms(grid, grid_count):
     atom_keys = list(grid.keys())
     with alive_bar(len(atom_keys)) as bar:
@@ -537,11 +546,12 @@ def main(argv=sys.argv[1:]):
                         choices=('grid','grid_scan','violin','volume','all'))
 
     ## Grid method specifics
-    parser.add_argument('--grid', type=float, help='Grid size in nm, defaults to 0.5', required=False, default=0.5)
+    parser.add_argument('--grid', type=float, help='Grid size in nm, defaults to 0.1 nm', required=False, default=0.1)
     parser.add_argument('--pop_threshold', type=int,
                         help='Bins with populations lower than this will be disregarded for plotting, defaults to 10 (good for throwing away SSAP caused artefacts)',
                         required=False, default=10)
     parser.add_argument('--mp', type=int, help='Nthreads to use for grid calculations, defaults to 1', required=False, default=False)
+    parser.add_argument('--gridbackend', type=int, help='Backend to use for unique grid assignment', required=False, default=1, choices=(0,1))
 
     ## Plotting
     parser.add_argument("--plot", type=str2bool, help='Plot spatial stuff, defaults to False', const=True, default=True, nargs='?')

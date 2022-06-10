@@ -260,7 +260,7 @@ def main(argv=sys.argv[1:]):
     with open(args.o,'wb') as fp:
         print(f'Outputting vectors to {args.o}')
         vectors.to_parquet(fp, compression='snappy')
-
+    """
     if args.resi:
         try:
             with open(args.resi) as file:
@@ -285,7 +285,7 @@ def main(argv=sys.argv[1:]):
         with open(f'{args.o}_resis', 'wb') as fp:
             print(f'Outputting residue assignments to {args.o}_resis')
             resis_df.to_parquet(fp, compression='snappy')
-
+    """
 if __name__ == '__main__':
     main()
 
