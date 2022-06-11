@@ -82,7 +82,9 @@ def analyse_space(vector):
 def grid(vectors):
 
 
-    divided = (vectors / args.grid).astype(np.int16)  # Divide all cells by args.grid #
+    divided = (vectors / args.grid)  # Divide all cells by args.grid #
+    divided = divided.apply(np.floor).astype(np.int16) # Floor means that the grids start from 0,
+    # not 0 (because then for example x=0.05 / grid=0.1 would end up in bin=0, which is the zeroth one)
 
     import time
     start_time = time.time()
@@ -162,104 +164,162 @@ def grid_rms(grid_unq1, grid_unq2, grid_count1, grid_count2):
     import time
     start_time = time.time()
 
-    # How many triples
-    colsno_1 = len(grid_unq1.columns)
-    colsno_2 = len(grid_unq2.columns)
+    method = 'smart'
 
-    # Prepare RMSmetric list (one value for one compared atom)
-    rms_lst = []
+    start_time = time.time()
+    if method == 'smart':
 
-    number_of_triples = min(colsno_1, colsno_2) # Handles cases where one of the datasets has less atoms
+        # How many triples
+        colsno_1 = len(grid_unq1.columns)
+        colsno_2 = len(grid_unq2.columns)
 
-    if colsno_1 != colsno_2:
-        print('WARNING grid-datasets used for RMS calculation are of different size, RMS value may be faulty. Will iterate through'
-              'atoms until one of the datasets runs out.')
+        # Prepare RMSmetric list (one value for one compared atom)
+        rms_lst = []
 
-    # two lens, ceil and /2 because datasets can theoretically have different size
-    # this way the bar really calculates progress in such a case
+        if colsno_1 != colsno_2:
+            print('WARNING grid-datasets used for RMS calculation are of different size, RMS value may be faulty. Will iterate through'
+                  'atoms until one of the datasets runs out.')
 
-    print("--- %s A: initial check&prep ---" % (time.time() - start_time))
-
-
-    print(f'Calculating inter-grid RMS using gridsize {args.grid} nm')
-    for col1, col2 in zip(grid_unq1.columns, grid_unq2.columns): # This works even if one of the datasets has less atoms
-        rmsd_sum = 0
+        # two lens, ceil and /2 because datasets can theoretically have different size
+        # this way the bar really calculates progress in such a case
 
 
+        # If we just straight up dropna, rows containing SOME None values would be dropped in entirety
+        # This causes only some of the atom RMS to be calculated wrong, dependent on the atom with the least
+        # unique values (the one where Nones start the earlies in the column)
 
-        triple1 = pd.DataFrame(grid_unq1[col1].dropna().tolist())
-
-
-
-        triple2 = pd.DataFrame(grid_unq2[col2].dropna().tolist())
-        xs2, ys2, zs2 = tuple(triple2[0]), tuple(triple2[1]), tuple(triple2[2])
-
-
-        triple1_counts = tuple(grid_count1[col1].dropna().tolist())
+        # We're replacing None values with a triple array np.array([None, None, None])
+        # If we were to replace it by (0,0,0) and handle this by assigning 0 weights, we'd do useless additional iterations
 
 
-        triple2_counts = pd.DataFrame(grid_count2[col2].dropna().tolist())
+        print(f'Calculating inter-grid RMS using gridsize {args.grid} nm')
+        for col1, col2 in zip(grid_unq1.columns, grid_unq2.columns): # This works even if one of the datasets has less atoms
+            rmsd_sum = 0
 
+            triple1 = pd.DataFrame(grid_unq1[col1].dropna().tolist())
+            triple2 = pd.DataFrame(grid_unq2[col2].dropna().tolist())
+            triple1_counts = tuple(grid_count1[col1].dropna().tolist())
+            triple2_counts = np.array(grid_count2[col2].dropna().tolist())
 
 
 
-        sum_counts1, sum_counts2 = sum(triple1_counts), sum(triple2_counts[0])
+            xs2, ys2, zs2 = tuple(triple2[0]), tuple(triple2[1]), tuple(triple2[2])
 
-        samples = sum_counts1*sum_counts2
+            sum_counts1, sum_counts2 = sum(triple1_counts), sum(triple2_counts)
 
-
-        # For i-th entry in first trajectory grids, for j-th entry in second trajectory grids
-        i = 0
-
-        matrix_x = []
-        matrix_y = []
-        matrix_z = []
-        matrix_weight = []
+            samples = sum_counts1*sum_counts2
 
 
-        while i < len(triple1):
+            # For i-th entry in first trajectory grids, for j-th entry in second trajectory grids
+            i = 0
 
-            # X-term (single i with all j), Y-term, Z-term
-            x_term_i = triple1.iloc[i, 0] - xs2 # Create a series for i=1 minus all possible j
-            y_term_i = triple1.iloc[i, 1] - ys2
-            z_term_i = triple1.iloc[i, 2] - zs2
-
-            # Weights for all pairs
-            i_weight = np.array(triple1_counts[i] * triple2_counts, dtype=np.int32)
+            matrix_x = []
+            matrix_y = []
+            matrix_z = []
+            matrix_weight = []
 
 
-            matrix_x.append(x_term_i)
-            matrix_y.append(y_term_i)
-            matrix_z.append(z_term_i)
-            matrix_weight.append(i_weight)
+            while i < len(triple1):
 
-            i += 1
-
-
-        for ix, iy, iz, iweight in zip(matrix_x, matrix_y, matrix_z, matrix_weight):
-            #print(ix)
-            #print(iy)
-            #print(iz)
+                # X-term (single i with all j), Y-term, Z-term
+                x_term_i = triple1.iloc[i, 0] - xs2 # Create a series for i=1 minus all possible j
+                y_term_i = triple1.iloc[i, 1] - ys2
+                z_term_i = triple1.iloc[i, 2] - zs2
 
 
-            ix = ix**2
-            iy = iy**2
-            iz = iz**2
 
-            ixyz = ix+iy+iz
-            ixyz_w = ixyz*iweight
+                # Weights for all pairs
+                i_weight = triple1_counts[i] * triple2_counts
 
-            rmsd_sum += ixyz_w.sum()
+                matrix_x.append(x_term_i)
+                matrix_y.append(y_term_i)
+                matrix_z.append(z_term_i)
+                matrix_weight.append(i_weight)
 
-        rmsd = math.sqrt((1 / samples) * rmsd_sum)
+                i += 1
 
-        rms_lst.append(rmsd)
 
-    print("--- %s C: Sums calculated ---" % (time.time() - start_time))
+            for ix, iy, iz, iweight in zip(matrix_x, matrix_y, matrix_z, matrix_weight):
+                #print(ix)
+                #print(iy)
+                #print(iz)
+
+
+                ix = ix**2
+                iy = iy**2
+                iz = iz**2
+
+                ixyz = ix+iy+iz
+                ixyz_w = ixyz*iweight
+
+                rmsd_sum += ixyz_w.sum()
+
+            rmsd = math.sqrt((1 / samples) * rmsd_sum)
+
+            rms_lst.append(rmsd)
+    print("--- %s B: Smart done ---" % (time.time() - start_time))
+    start_time = time.time()
+
+    method ='brute-force'
+    if method == 'brute-force':
+
+        colsno_1 = len(grid_unq1.columns)
+        colsno_2 = len(grid_unq2.columns)
+
+        rms_lst_brute = []
+
+        if colsno_1 != colsno_2:
+            print(
+                'WARNING grid-datasets used for RMS calculation are of different size, RMS value may be faulty. Will iterate through'
+                'atoms until one of the datasets runs out.')
+        for col1, col2 in zip(grid_unq1.columns, grid_unq2.columns): # This works even if one of the datasets has less atoms
+            rmsd_sum = 0
+
+            triple1 = pd.DataFrame(grid_unq1[col1].dropna().tolist())
+            triple2 = pd.DataFrame(grid_unq2[col2].dropna().tolist())
+            triple1_counts = tuple(grid_count1[col1].dropna().tolist())
+            triple2_counts = tuple(grid_count2[col2].dropna().tolist())
+
+            xs, ys, zs = tuple(triple1[0]), tuple(triple1[1]), tuple(triple1[2])
+            xs2, ys2, zs2 = tuple(triple2[0]), tuple(triple2[1]), tuple(triple2[2])
+
+            sum_counts1, sum_counts2 = sum(triple1_counts), sum(triple2_counts)
+
+            samples = sum_counts1*sum_counts2
+
+            i = 0
+            j = 0
+
+            rmsd_sum = 0
+            while i < len(xs):
+                j = 0
+                while j < len(xs2):
+                    rmsd_sum += ((xs[i]-xs2[j])**2 + (ys[i]-ys2[j])**2 + (zs[i]-zs2[j])**2) * (triple1_counts[i]*triple2_counts[j])
+                    j += 1
+
+                i += 1
+
+            rmsd = math.sqrt((1/samples) * rmsd_sum)
+            rms_lst_brute.append(rmsd)
+    print("--- %s C: Brute done ---" % (time.time() - start_time))
+
+
 
     fig, axs = plt.subplots()
     import seaborn as sb
-    plotdata = pd.DataFrame(rms_lst)
+
+    olddf = pd.read_csv('/run/timeshift/backup/IOCB/md/FDs/MSM/fitted_trajectories/VECTORS/pdz/run_1/old_method_unique_grids/correct_grids_old.csv')
+    olddf = olddf.iloc[:,-1]
+
+
+
+    plotdata = pd.DataFrame(rms_lst, columns=['smart'])
+    plotdata_brute = pd.DataFrame(rms_lst_brute, columns=['brute'])
+    plotdata_both = pd.concat([plotdata, plotdata_brute], axis=1, ignore_index=True)
+    plotdata_both = pd.concat([plotdata_both, olddf], axis=1, ignore_index=True)
+    plotdata_both.columns = ['smart', 'brute', 'old']
+    normalized_df = (plotdata_both - plotdata_both.min()) / (plotdata_both.max() - plotdata_both.min())
+    print(normalized_df)
 
 
 
@@ -267,13 +327,14 @@ def grid_rms(grid_unq1, grid_unq2, grid_count1, grid_count2):
     #sb.lineplot(data=backend0.iloc[:, 1], ax=axs, color='blue')
 
     #df = pd.read_csv('//run/timeshift/backup/IOCB/md/FDs/MSM/fitted_trajectories/VECTORS/pdz/run_1/old_method_unique_grids/rms_grid01_skipno.csv')
-    df = pd.read_csv('/run/timeshift/backup/IOCB/md/FDs/MSM/fitted_trajectories/VECTORS/pdz/run_1/old_method_unique_grids/correct_grids_old.csv')
-    sb.lineplot(data=df.iloc[:, 1], ax=axs, color='red')
+
+    #sb.lineplot(data=df.iloc[:, 1], ax=axs, color='red')
 
 
-    plotdata = plotdata
-    sb.lineplot(data=plotdata, ax=axs, color='green')
-    print(rms_lst)
+    #plotdata = plotdata*100
+    sb.lineplot(data=normalized_df, ax=axs, palette=['r','g', 'b'])
+
+
 
 
 
