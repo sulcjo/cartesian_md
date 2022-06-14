@@ -31,6 +31,7 @@ from cartesian_diff import write_to_pdb_beta
 from matplotlib.widgets import TextBox, Slider, Button
 from mpl_toolkits.mplot3d.art3d import Poly3DCollection
 import math
+import subprocess
 
 __prepare_matplotlib()
 
@@ -148,33 +149,57 @@ def grid(vectors):
 
     # 11.8 seconds with np.unique(triple_arr)
     # 15.1 seconds with pd.unique and lambdas for modifying using maps
+    uniq_df.columns = [str(i) for i in uniq_df.columns]
+    count_df.columns = [str(i) for i in count_df.columns]
 
     return(uniq_df, count_df)
 
-def grid_rms(grid_unq1, grid_unq2, grid_count1, grid_count2):
-    #print(grid_unq1)
-    #print(grid_count1)
+def grid_rms(grid_unq1, grid_unq2, grid_count1, grid_count2, method='genius'):
+    """
+    Calculates the so-called "R-score", which is derived from classic molecular RMSD.
+    We have two trajectories, where i-th and j-th indexes denote a unique gridpoint inside each trajectory
+    (or a trajectory datapoint). We binned these (reducing accuracy) and identified unique triples (X,Y,Z).
 
-    #grid_unq1 = pd.read_parquet('/run/timeshift/backup/IOCB/md/FDs/MSM/fitted_trajectories/VECTORS/pdz/run_1/old_method_unique_grids/grids1')
-    #grid_unq2 = pd.read_parquet('/run/timeshift/backup/IOCB/md/FDs/MSM/fitted_trajectories/VECTORS/pdz/run_1/old_method_unique_grids/grids2')
-    #grid_count1 = pd.read_parquet('/run/timeshift/backup/IOCB/md/FDs/MSM/fitted_trajectories/VECTORS/pdz/run_1/old_method_unique_grids/grids1_count')
-    #grid_count2 = pd.read_parquet('/run/timeshift/backup/IOCB/md/FDs/MSM/fitted_trajectories/VECTORS/pdz/run_1/old_method_unique_grids/grids2_count')
+    We have two datasets per trajectory now, one with unique triples and one with it's population per trajectory.
+    The amount of samples is the sum of all counts (gets us the amount of points in original trajectories)
+    Using matrix trickery, we calculate (computationally simplified) version of this equation, where 1, 2 denote
+    trajectories.
+
+    pairR_n-th_atom = sqrt[ (1/samples) * SUM_i SUM_j (X1i-X2j)^2 + (Y1i-Y2j)^2 + (Z1i-Z2j)^2  ]
+    firstinternalR_n-th_atom = sqrt[ (1/samples) * SUM_i SUM_j (X1i-X1j)^2 + (Y1i-Y1j)^2 + (Z1i-Z1j)^2  ]
+    secondinternalR_n-th_atom = sqrt[ (1/samples) * SUM_i SUM_j (X2i-X2j)^2 + (Y2i-Y2j)^2 + (Z2i-Z2j)^2  ]
+
+    The R-score described such as this is unfortunately dependent on the distributions widths. If the two distributions
+    (of the two trajectories) were identical, but both got wider, the R-score value would also rise, falsely indication
+    an increasing change in the atom's positions. To solve this, we calculate "internal" R-scores for each of the distri-
+    butions, which describe the widths of them.
+
+    To obtain the final R-score for an atom, we calculate (2 x pairR_n-th_atom) - (firstinternalR_n-th_atom + secondinternalR_n-th_atom).
+
+    The higher the R-score for the atom, the more it's positional distribution changed between the two trajectories.
 
 
-    import time
-    start_time = time.time()
+    :param grid_unq1:
+    :param grid_unq2:
+    :param grid_count1:
+    :param grid_count2:
+    :param method:
+    :return:
+    """
 
-    method = 'smart'
 
-    start_time = time.time()
-    if method == 'smart':
+
+
+    # Prepare RMSmetric list (one value for one compared atom)
+    rms_lst = []
+
+    if method == 'genius':
 
         # How many triples
         colsno_1 = len(grid_unq1.columns)
         colsno_2 = len(grid_unq2.columns)
 
-        # Prepare RMSmetric list (one value for one compared atom)
-        rms_lst = []
+
 
         if colsno_1 != colsno_2:
             print('WARNING grid-datasets used for RMS calculation are of different size, RMS value may be faulty. Will iterate through'
@@ -187,28 +212,61 @@ def grid_rms(grid_unq1, grid_unq2, grid_count1, grid_count2):
         # If we just straight up dropna, rows containing SOME None values would be dropped in entirety
         # This causes only some of the atom RMS to be calculated wrong, dependent on the atom with the least
         # unique values (the one where Nones start the earlies in the column)
+        # This is solved by calculating column by column
 
-        # We're replacing None values with a triple array np.array([None, None, None])
-        # If we were to replace it by (0,0,0) and handle this by assigning 0 weights, we'd do useless additional iterations
-
-
-        print(f'Calculating inter-grid RMS using gridsize {args.grid} nm')
+        print(f'Calculating R-Score using gridsize {args.grid} nm')
         for col1, col2 in zip(grid_unq1.columns, grid_unq2.columns): # This works even if one of the datasets has less atoms
             rmsd_sum = 0
 
             triple1 = pd.DataFrame(grid_unq1[col1].dropna().tolist())
             triple2 = pd.DataFrame(grid_unq2[col2].dropna().tolist())
-            triple1_counts = tuple(grid_count1[col1].dropna().tolist())
-            triple2_counts = np.array(grid_count2[col2].dropna().tolist())
-
+            triple1_counts = grid_count1[col1].dropna().tolist()
+            triple2_counts = np.array(grid_count2[col2].dropna().tolist())  # has to be matrix multiplied by numpy, so has to be an array
+            sum_counts1, sum_counts2 = sum(triple1_counts), sum(triple2_counts)
+            triple1_counts = pd.DataFrame(triple1_counts)
 
 
             xs2, ys2, zs2 = tuple(triple2[0]), tuple(triple2[1]), tuple(triple2[2])
 
-            sum_counts1, sum_counts2 = sum(triple1_counts), sum(triple2_counts)
-
             samples = sum_counts1*sum_counts2
 
+            def map_matrices(xyz):
+                return(xyz[0] - xs2, xyz[1] - ys2, xyz[2] - zs2)
+
+            def map_counts(xyz):
+                return(np.array(xyz) * triple2_counts)
+
+            # Prepare matrices
+            matrix = pd.DataFrame(triple1.apply(map_matrices, axis=1))
+            counts = triple1_counts.apply(map_counts, axis=1)
+
+            # Calculate ij pairs (each row is a single i, each column inside the array is a single j) including their weights
+            matrix = pd.DataFrame(matrix[0].to_list())
+            matrix = matrix**2
+            matrix = matrix.sum(axis=1)
+            matrix = matrix * counts
+
+            # Calculate sums and the final R-factor for current atom
+            matrix_sum = matrix.sum().sum()
+            rmsd = math.sqrt((1 / samples) * matrix_sum)
+
+            # Append to list
+            rms_lst.append(rmsd)
+
+    elif method == 'smart':
+        print(f'Calculating R-Score using gridsize {args.grid} nm')
+        for col1, col2 in zip(grid_unq1.columns,
+                              grid_unq2.columns):  # This works even if one of the datasets has less atoms
+            rmsd_sum = 0
+
+            triple1 = pd.DataFrame(grid_unq1[col1].dropna().tolist())
+            triple2 = pd.DataFrame(grid_unq2[col2].dropna().tolist())
+            triple1_counts = tuple(grid_count1[col1].dropna().tolist())
+            triple2_counts = np.array(grid_count2[col2].dropna().tolist())  # has to be matrix multiplied by numpy, so has to be an array
+
+            xs2, ys2, zs2 = tuple(triple2[0]), tuple(triple2[1]), tuple(triple2[2])
+            sum_counts1, sum_counts2 = sum(triple1_counts), sum(triple2_counts)
+            samples = sum_counts1 * sum_counts2
 
             # For i-th entry in first trajectory grids, for j-th entry in second trajectory grids
             i = 0
@@ -218,15 +276,12 @@ def grid_rms(grid_unq1, grid_unq2, grid_count1, grid_count2):
             matrix_z = []
             matrix_weight = []
 
-
-            while i < len(triple1):
+            while i < len(triple1):  # This is faster than using list comprehension
 
                 # X-term (single i with all j), Y-term, Z-term
-                x_term_i = triple1.iloc[i, 0] - xs2 # Create a series for i=1 minus all possible j
+                x_term_i = triple1.iloc[i, 0] - xs2  # Create a series for i=1 minus all possible j
                 y_term_i = triple1.iloc[i, 1] - ys2
                 z_term_i = triple1.iloc[i, 2] - zs2
-
-
 
                 # Weights for all pairs
                 i_weight = triple1_counts[i] * triple2_counts
@@ -238,30 +293,25 @@ def grid_rms(grid_unq1, grid_unq2, grid_count1, grid_count2):
 
                 i += 1
 
-
             for ix, iy, iz, iweight in zip(matrix_x, matrix_y, matrix_z, matrix_weight):
-                #print(ix)
-                #print(iy)
-                #print(iz)
+                # print(ix)
+                # print(iy)
+                # print(iz)
 
+                ix = ix ** 2
+                iy = iy ** 2
+                iz = iz ** 2
 
-                ix = ix**2
-                iy = iy**2
-                iz = iz**2
-
-                ixyz = ix+iy+iz
-                ixyz_w = ixyz*iweight
+                ixyz = ix + iy + iz
+                ixyz_w = ixyz * iweight
 
                 rmsd_sum += ixyz_w.sum()
 
             rmsd = math.sqrt((1 / samples) * rmsd_sum)
 
             rms_lst.append(rmsd)
-    print("--- %s B: Smart done ---" % (time.time() - start_time))
-    start_time = time.time()
 
-    method ='brute-force'
-    if method == 'brute-force':
+    elif method == 'brute-force':
 
         colsno_1 = len(grid_unq1.columns)
         colsno_2 = len(grid_unq2.columns)
@@ -301,51 +351,8 @@ def grid_rms(grid_unq1, grid_unq2, grid_count1, grid_count2):
 
             rmsd = math.sqrt((1/samples) * rmsd_sum)
             rms_lst_brute.append(rmsd)
-    print("--- %s C: Brute done ---" % (time.time() - start_time))
 
-
-
-    fig, axs = plt.subplots()
-    import seaborn as sb
-
-    olddf = pd.read_csv('/run/timeshift/backup/IOCB/md/FDs/MSM/fitted_trajectories/VECTORS/pdz/run_1/old_method_unique_grids/correct_grids_old.csv')
-    olddf = olddf.iloc[:,-1]
-
-
-
-    plotdata = pd.DataFrame(rms_lst, columns=['smart'])
-    plotdata_brute = pd.DataFrame(rms_lst_brute, columns=['brute'])
-    plotdata_both = pd.concat([plotdata, plotdata_brute], axis=1, ignore_index=True)
-    plotdata_both = pd.concat([plotdata_both, olddf], axis=1, ignore_index=True)
-    plotdata_both.columns = ['smart', 'brute', 'old']
-    normalized_df = (plotdata_both - plotdata_both.min()) / (plotdata_both.max() - plotdata_both.min())
-    print(normalized_df)
-
-
-
-    #backend0 = pd.read_csv('/run/timeshift/backup/IOCB/md/FDs/MSM/fitted_trajectories/VECTORS/pdz/run_1/uniques_backend0.csv')
-    #sb.lineplot(data=backend0.iloc[:, 1], ax=axs, color='blue')
-
-    #df = pd.read_csv('//run/timeshift/backup/IOCB/md/FDs/MSM/fitted_trajectories/VECTORS/pdz/run_1/old_method_unique_grids/rms_grid01_skipno.csv')
-
-    #sb.lineplot(data=df.iloc[:, 1], ax=axs, color='red')
-
-
-    #plotdata = plotdata*100
-    sb.lineplot(data=normalized_df, ax=axs, palette=['r','g', 'b'])
-
-
-
-
-
-
-
-
-    plt.show()
-
-    exit()
-
-    return (rms_lst)
+    return(np.array(rms_lst))
 
 def internal_grid_rms(grid, grid_count):
     atom_keys = list(grid.keys())
@@ -490,6 +497,33 @@ def plot_cubes(data, color, label, ax):
 
     # plt.show()
 
+def pymol_dynamicity(file_name, traj1name, traj2name, type):
+
+    # Coloring by B-factor in Pymol doesn't work when the factors are low. Maybe they only consider integers?
+    # Solved by rescaling normalized datasets by a factor of 100x
+
+    if type == 'diff':
+        minimum_beta = -100
+        session = 'visualized_diff.pse'
+        spectrum = 'marine_gray70_raspberry'
+        spectrum_ramp = '[marine, gray70, raspberry]'
+        sphere_select = f'select more_in_{traj2name}, b > 0; select more_in_{traj1name}, b < 0; show_as sticks cartoon sphere,more_in_{traj1name};show_as sticks cartoon sphere,more_in_{traj2name};'
+
+    else:
+        minimum_beta = 0
+        session = 'visualized_positions.pse'
+        spectrum = 'gray70_pink_raspberry_purple'
+        spectrum_ramp = '[gray70, pink, raspberry, purple]'
+        sphere_select = ''
+
+    pymol_sub2 = 'cmd.alter("*", "vdw=0.6")'
+    pymol_sub3 = f'cmd.label("more_in_{traj1name}","str(ID)")'
+    pymol_sub4 = f'cmd.label("more_in_{traj2name}","str(ID)")'
+    pymol_command = f"set orthoscopic, on; bg_color white; ramp_new colorbar, none, [{minimum_beta}, 0, 100], {spectrum_ramp}; spectrum b, {spectrum}, minimum={minimum_beta}, maximum=100; {sphere_select} ;set seq_view; show lines; {pymol_sub2}; {pymol_sub3};{pymol_sub4}; set cartoon_discrete_colors, on; set valence, 1; set label_shadow_mode, 2; set label_size,-0.6; set label_font_id,7; set label_outline_color, black; set label_color, white; set label_position,(0,0,2); save {args.o}/{session}"
+
+    p = subprocess.Popen(f"pymol {file_name} -d '{pymol_command}' &", stdout=subprocess.PIPE, shell=True, start_new_session=True)
+
+
 def set_ax_lims_3d(grids1, grids2, ax):
     """ Flatten the grids datasets, join them and find the lowest and highest gridpoint. Set ax limits and ticks """
     """
@@ -599,7 +633,7 @@ def main(argv=sys.argv[1:]):
     parser.add_argument("--s", type=str, help='OPTIONAL Input vector.json for trajectory 2', default=False)
     parser.add_argument("--o", type=str, help='Output directory, defaults to names of trajectories used separated by _', required=False, default=False)
     parser.add_argument("--pdbs", type=str, help='OPTIONAL Input structure in .pdb format of the second trajectory', default=False)
-    parser.add_argument("--resi", type=str, help='OPTIONAL atoms-to-residues assignment file.json. Will turn on residue mode', required=False, default=False)
+    #parser.add_argument("--resi", type=str, help='OPTIONAL atoms-to-residues assignment file.json. Will turn on residue mode', required=False, default=False)
 
 
     # cartesian grid unique arguments
@@ -608,22 +642,30 @@ def main(argv=sys.argv[1:]):
 
     ## Grid method specifics
     parser.add_argument('--grid', type=float, help='Grid size in nm, defaults to 0.1 nm', required=False, default=0.1)
-    parser.add_argument('--pop_threshold', type=int,
-                        help='Bins with populations lower than this will be disregarded for plotting, defaults to 10 (good for throwing away SSAP caused artefacts)',
-                        required=False, default=10)
-    parser.add_argument('--mp', type=int, help='Nthreads to use for grid calculations, defaults to 1', required=False, default=False)
+    #parser.add_argument('--pop_threshold', type=int,
+                        #help='Bins with populations lower than this will be disregarded for plotting, defaults to 10 (good for throwing away SSAP caused artefacts)',
+                        #required=False, default=10)
+    #parser.add_argument('--mp', type=int, help='Nthreads to use for grid calculations, defaults to 1', required=False, default=False)
     parser.add_argument('--gridbackend', type=int, help='Backend to use for unique grid assignment', required=False, default=1, choices=(0,1))
 
     ## Plotting
-    parser.add_argument("--plot", type=str2bool, help='Plot spatial stuff, defaults to False', const=True, default=True, nargs='?')
+    parser.add_argument("--p", type=str2bool, help='Disable all visualization and plotting, overrides all other plot parameters', default=False)
+    parser.add_argument("--pdbshow", type=str2bool, help='Creates a PyMol visualization of dynamicity and position change, requires --pdbs. '
+                                                    'Default=True', default=True)
+    parser.add_argument("--plotrscore", type=str2bool, help='Plot R-scores from grid, defaults to True', const=True, default=True, nargs='?')
+
+
     parser.add_argument('--plot_3d', type=str2bool, help='OPTIONAL plot results in a 3D-plot', const=True, required=False, default=True, nargs='?')
-    parser.add_argument('--plot_positions', type=str2bool, help='OPTIONAL plot positional violin plots', const=True, required=False, default=True, nargs='?')
     parser.add_argument('--plot_diff', type=str2bool, help='OPTIONAL plot explored volume by atom', const=True, required=False, default=True, nargs='?')
     parser.add_argument('--plot_violin', type=str2bool, help='OPTIONAL plot violin plots of spatial positions', const=True, required=False, default=True, nargs='?')
     ##
 
     global args
     args = parser.parse_args(argv)
+
+    # Disable or enable all plotting with a single argument
+    if args.p:
+        args.pdbshow, args.plotrscore, args.plot_3d, args.plot_violin, args.plot_diff = False, False, False, False, False
 
     # Set up trajectory names from file names
     expression = "[\w-]+?((?=\.)|(?=$))"
@@ -654,7 +696,7 @@ def main(argv=sys.argv[1:]):
             with open('outputs.txt', 'at') as file: # This assumes that --method=all !
 
                 diffname = 'diff_atom.csv'
-                confname = f'{args.o}_grid_g{args.grid}_p{args.pop_threshold}.csv'
+                confname = f'{traj1_name}_{traj2_name}_grid_g{args.grid}.csv'
                 grids1name = f'{traj1_name}_grid_g{args.grid}.cart'
                 grids2name = f'{traj2_name}_grid_g{args.grid}.cart'
                 grids1count = f'{traj1_name}_grid_g{args.grid}_count.cart'
@@ -717,114 +759,114 @@ def main(argv=sys.argv[1:]):
         if args.pdbs:
             if not args.s:
                 print('(!!) Will print B-factors for a single trajectory only in nm^3')
-                delta = output_df[f'V({traj1_name})']
-                diff_pdb = 'REMARK Volume explored by atom in cartesian space writen in Beta-factors in nm^3 \n'
+                delta = output_df[f'V({traj1_name})']*1000
+                diff_pdb = 'REMARK Volume explored by atom in cartesian space PER STEP writen in Beta-factors in pm^3 (picometers)\n'
             else:
                 print('(!!) Will print B-factors deltas between the two trajectories (s - f) in nm^3')
-                delta = output_df[f'V({traj2_name})'] - output_df[f'V({traj1_name})']
-                diff_pdb = 'REMARK Difference of volumes explored by atoms in two trajectories in cartesian space writen in Beta-factors in nm^3 \n'
+                delta = (output_df[f'V({traj2_name})'] - output_df[f'V({traj1_name})'])
+                diff_pdb = 'REMARK Difference of volumes explored by atoms in two trajectories in cartesian space writen in Beta-factors in nm^3. Normalized -100 to 100 \n'
+
+
+            # Normalize for better visualization between -1 and 1
+            delta = (delta-delta.mean())/delta.std()
+            delta = delta * 100 # Needed because of PyMol shenanigans
+
 
             diff_pdb += write_to_pdb_beta(pdb=args.pdbs, delta=delta)
-            with open(f'{args.o}/{args.o}_diff.pdb', 'w') as file:
+
+            pdb_filename = f'{args.o}/{args.o}_diff.pdb'
+            with open(pdb_filename, 'w') as file:
                 file.write(diff_pdb)
+
+            if args.pdbshow:
+                pymol_dynamicity(pdb_filename, traj1_name, traj2_name, type='diff')
+
 
         if args.plot_diff:
             # Plot atom-wise diff
             fig, ax = plt.subplots(figsize=(15, 10))
-            vol_atoms_1 = output_df[f'V({traj1_name})']
+            vol_atoms_1 = output_df[f'V({traj1_name})/step']
             name_atoms_1 = output_df[traj1_name]
             ax.plot(name_atoms_1, vol_atoms_1, color='blue', label=traj1_name)
             # Rework plotting with seaborn instead of matplotlib
             if args.s:
-                vol_atoms_2 = output_df[f'V({traj2_name})']
+                vol_atoms_2 = output_df[f'V({traj2_name})/step']
                 name_atoms_2 = output_df[traj2_name]
                 ax.plot(name_atoms_2, vol_atoms_2, color='orange', label=traj2_name)
             ax.set_xlabel('Atom number')
-            ax.set_ylabel('Explored volume / nm^3')
+            ax.set_ylabel('Explored volume per step / nm^3')
             ax.legend()
             plt.savefig(f'{args.o}/diff_plot_atom.png', dpi=300)
 
-            plt.show() # use only one plt.show() at the end
-        global VOLDF
-        VOLDF = output_df
 
     if args.method == 'grid' or args.method == 'all':
 
-        atomic_grid_uniq, atomic_grid_count = grid(vectors1)
-        nongridded_vectors1_num = vectors1.count(numeric_only=True, axis=0).sum() # how many vectors before
-        gridded_vectors1_num = atomic_grid_uniq.count(numeric_only=True, axis=0).sum() # how many vectors after binning
 
+        atomic_grid_uniq, atomic_grid_count = grid(vectors1)
+        nongridded_vectors1_num = vectors1.count(axis=0).sum() # how many vectors before
+        gridded_vectors1_num = atomic_grid_uniq.count(axis=0).sum() # how many vectors after binning
         nongridded_vectors2_num = 0
         gridded_vectors2_num = 0
 
+        # Save grids for later use with cartesian_batch
+        atomic_grid_uniq.to_parquet(f'{args.o}/{traj1_name}_grid_g{args.grid}.cart')
+        atomic_grid_count.to_parquet(f'{args.o}/{traj1_name}_grid_g{args.grid}_count.cart')
+
+
         if args.s:
             atomic_grid_uniq2, atomic_grid_count2 = grid(vectors2)
-            nongridded_vectors2_num = vectors2.count(numeric_only=True, axis=0).sum()
-            gridded_vectors2_num = atomic_grid_uniq2.count(numeric_only=True, axis=0).sum()
+            nongridded_vectors2_num = vectors2.count(axis=0).sum()
+            gridded_vectors2_num = atomic_grid_uniq2.count(axis=0).sum()
 
-            rms = grid_rms(atomic_grid_uniq, atomic_grid_uniq2, atomic_grid_count, atomic_grid_count2)
-            exit()
+            rms = grid_rms(atomic_grid_uniq, atomic_grid_uniq2, atomic_grid_count, atomic_grid_count2, method='genius')
+            int_rms1 = grid_rms(atomic_grid_uniq, atomic_grid_uniq, atomic_grid_count, atomic_grid_count, method='genius')
+            int_rms2 = grid_rms(atomic_grid_uniq2, atomic_grid_uniq2, atomic_grid_count2, atomic_grid_count2, method='genius')
+            rms = (2 * rms) - (int_rms1+int_rms2) # Final R-score is a difference between twice the pairscore and a sum of internal R-scores of both distributions
 
-            rms_out = pd.Series(rms).T
-            rms_out = pd.DataFrame(rms_out, columns=[f'{traj1_name}/{traj2_name}'])
-            rms_out.to_csv(f'{args.o}/{args.o}_grid_g{args.grid}_p{args.pop_threshold}.csv')
-        else:
-            grid2_size = 0
-            grid2_unq_size = 0
+            # Output results of grid method
+            rms_out = pd.DataFrame(rms, columns=[f'{traj1_name}/{traj2_name}'])
+            rms_out.to_csv(f'{args.o}/{traj1_name}_{traj2_name}_grid_g{args.grid}.csv')
+            rms_out_norm = (rms_out-rms_out.min())/(rms_out.max()-rms_out.min())
+            rms_out_norm.to_csv(f'{args.o}/{traj1_name}_{traj2_name}_grid_g{args.grid}_normalized.csv')
+
+
+            atomic_grid_uniq2.to_parquet(f'{args.o}/{traj2_name}_grid_g{args.grid}.cart')
+            atomic_grid_count2.to_parquet(f'{args.o}/{traj2_name}_grid_g{args.grid}_count.cart')
+
+            if args.pdbs:
+                delta = pd.Series(rms_out_norm.iloc[:, 0].values)
+                delta = delta * 100 # Needed because of PyMol shenanigans
+                print('(!!) Will print B-factors of conformational deltas between the two trajectories in arbitrary units. Normalized 0 to 100.')
+                grid_pdb = 'REMARK Differences in exploring cartesian space (R-scores) per atom writen in Beta-factors in arbitrary units \n'
+                grid_pdb += write_to_pdb_beta(pdb=args.pdbs, delta=delta)
+                pdb_filename = f'{args.o}/{traj1_name}_{traj2_name}_grid{args.grid}.pdb'
+
+                with open(pdb_filename, 'w') as file:
+                    file.write(grid_pdb)
+
+                if args.pdbshow:
+                    pymol_dynamicity(pdb_filename, traj1_name, traj2_name, type='conf')
+
+                if args.plotrscore:
+                    fig, ax = plt.subplots(figsize=(15, 12))
+                    ax.plot(rms_out.index.astype(int), rms_out.values.astype(float))
+                    ax.set_xlabel('Atom')
+                    ax.set_ylabel('R-score')
+                    ax.set_title(f'{traj1_name} vs {traj2_name} R-score with grid {args.grid}')
+
+
+
+
 
         print(f'Total amount of coordinates: {nongridded_vectors1_num + nongridded_vectors2_num}, '
               f'after binning {gridded_vectors1_num + gridded_vectors2_num}')
 
-        # Save grids for later use with cartesian_batch
-        with open(f'{args.o}/{traj1_name}_grid_g{args.grid}.json', 'w') as file:
-            json.dump(atomic_grid_uniq, file, cls=NumpyEncoder)
-        with open(f'{args.o}/{traj1_name}_grid_g{args.grid}_count.json', 'w') as file:
-            json.dump(grid_count, file, cls=NumpyEncoder)
-
-        if args.s:
-            with open(f'{args.o}/{traj2_name}_grid_g{args.grid}.json', 'w') as file:
-                json.dump(atomic_grid_2_uniq, file, cls=NumpyEncoder)
-            with open(f'{args.o}/{traj2_name}_grid_g{args.grid}_count.json', 'w') as file:
-                json.dump(grid_count_2, file, cls=NumpyEncoder)
-        ###
 
 
-
-
-        global GRIDF
-        GRIDF = rms_out
-
-        print(f'Total amount of vectors {vectors_num*2}')
-        print(f'Total amount of gridpoints {grid1_size+grid2_size}')
-        print(f'Total amount of unique gridpoints {grid1_unq_size+grid2_unq_size}')
-
-        # Calculate internal RMSD of grid-set 1 and 2
-        #int_rms_1 = internal_grid_rms(atomic_grid_uniq, grid_count)
-        #int_rms_2 = internal_grid_rms(atomic_grid_2_uniq, grid_count_2)
-        #print(int_rms_1)
-        #print(int_rms_2)
-
-        if args.pdbs:
-            print('(!!) Will print B-factors of conformational deltas between the two trajectories in arbitrary units')
-            delta = pd.Series(rms)
-
-            grid_pdb = 'REMARK Differences in exploring cartesian space per atom writen in Beta-factors in arbitrary units \n'
-            grid_pdb += write_to_pdb_beta(pdb=args.pdbs, delta=delta)
-
-            with open(f'{args.o}/{args.o}_grid.pdb', 'w') as file:
-                file.write(grid_pdb)
-
+        plt.show()
+        exit()
         if args.plot_3d and args.s:
 
-            if args.resi:
-                try:
-                    with open(args.resi) as file:
-                        resi_assignment = json.load(file)
-                except FileNotFoundError:
-                    print(f'{args.resi} not found, will not use.')
-                    args.resi = False
-
-                residue_keys = list(resi_assignment.keys())
 
             atomic_grid_keys = list(atomic_grid.keys())
             atomic_grid_keys_2 = list(atomic_grid_2.keys())
@@ -1221,4 +1263,4 @@ def main(argv=sys.argv[1:]):
 
 if __name__ == "__main__":
     main()
-
+    plt.show()  # use only one plt.show() at the end

@@ -215,13 +215,17 @@ def main(argv=sys.argv[1:]):
     parser = argparse.ArgumentParser()
     parser.add_argument("--f", type=str, help='Input traj (.xvg from GROMACS gmx traj or .pdb of trajectory) (aligned for rotation+translation or for rotation in conjuction with --s COM file)', required=True)
     parser.add_argument("--s", type=str, help='OPTIONAL Input traj -com -ox filepath', required=False)
-    parser.add_argument("--o", type=str, help='Output.json (json)', required=False, default='cartesian_outfile')
+    parser.add_argument("--o", type=str, help='Output.cart (parquet format)', required=False, default='cartesian_outfile')
     #parser.add_argument("--resi", type=str, help='OPTIONAL .pdb file for residue-to-atom assignment', required=False) # Delete or work on later
     parser.add_argument("--pdbnp", type=int, help='OPTIONAL number of asynchronous processes for .pdb parsing. =1 turns on serial backend, >1 parallel. =8 is recommended', required=False, default=8)
     global args
     args = parser.parse_args(argv)
+
+    # Output vector name and suffix
     if not args.o:
-        args.o = f'{args.f.strip(".xvg").strip(".pdb")}'
+        args.o = f'{args.f.strip(".xvg").strip(".pdb")}.cart'
+    elif not args.o.endswith('.cart'):
+        args.o += '.cart'
 
     if '.xvg' in args.f:
         traj_format = 'xvg'

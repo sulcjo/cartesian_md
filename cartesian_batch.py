@@ -66,10 +66,15 @@ def parse_paths(output_file):
         dir = split_line[2]
         diff_paths.append(f'{dir}/{split_line[3]}')
         conf_paths.append(f'{dir}/{split_line[4]}')
-        grids1_paths.append(f'{dir}/{split_line[5]}')
-        grids2_paths.append(f'{dir}/{split_line[6]}')
-        grids1_count_paths.append(f'{dir}/{split_line[7]}')
-        grids2_count_paths.append(f'{dir}/{split_line[8]}')
+        grids1_paths.append(0)
+        grids2_paths.append(0)
+        grids1_count_paths.append(0)
+        grids2_count_paths.append(0)
+
+        #grids1_paths.append(f'{dir}/{split_line[5]}')
+        #grids2_paths.append(f'{dir}/{split_line[6]}')
+        #grids1_count_paths.append(f'{dir}/{split_line[7]}')
+        #grids2_count_paths.append(f'{dir}/{split_line[8]}')
 
     return(keys1, keys2, diff_paths, conf_paths, grids1_paths, grids2_paths, grids1_count_paths, grids2_count_paths)
 
@@ -343,6 +348,7 @@ def main(argv=sys.argv[1:]):
 
     # Handle data loading
     keys1, keys2, diff_paths, conf_paths, grids1, grids2, gridscount1, gridscount2 = parse_paths(args.f)
+
 
 
     """
