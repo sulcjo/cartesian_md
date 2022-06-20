@@ -1,27 +1,12 @@
-"""
-Combined cartesian_diff and cartesian_grid modules into cartesian_ana
-"""
-
 import sys, argparse, os
-import json
 import numpy as np
-import pandas as pd
-from alive_progress import alive_bar
 import scipy.spatial as ss
 from cartesian import __prepare_matplotlib
 import re
-import matplotlib.pyplot as plt
-import math
 import matplotlib
 matplotlib.use('qtagg')
 import seaborn as sb
 import matplotlib.ticker as ticker
-try:
-    import multiprocessing as mp
-    multiprocess = True
-except ImportError:
-    multiprocess = False
-
 from alive_progress import alive_bar
 import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d import Axes3D
@@ -35,7 +20,6 @@ import subprocess
 
 __prepare_matplotlib()
 caller_procs = 12 # Asynchronous processes for saving output files of 3D and violin plots
-
 
 def analyse_space(vector):
     """
@@ -147,7 +131,7 @@ def grid(vectors):
     count_df = pd.DataFrame(list_of_count_dfs).T
 
 
-    print("--- %s Uniques ided---" % (time.time() - start_time))
+    #print("--- %s Uniques ided---" % (time.time() - start_time))
 
     # 11.8 seconds with np.unique(triple_arr)
     # 15.1 seconds with pd.unique and lambdas for modifying using maps
@@ -449,6 +433,81 @@ def plot_3d_handler(fig, ax, atomic_grid_uniq, atomic_grid_uniq2, traj1_name, tr
     # Show
     plt.show()
 
+def plot_violin_complex(indexer, fig, output_df, traj1_name, traj2_name, rms_out, atomic_grid_uniq, atomic_grid_uniq2):
+    try:
+        indexer = int(indexer)
+    except:
+        indexer = 1
+
+    if indexer < 1:
+        indexer = 1
+    elif indexer > len(vectors1.columns):
+        indexer = len(vectors1.columns)
+
+    indexer -= 1
+
+    global gax1
+    global gax2
+    global gax3
+    global gax4
+    try:
+        gax1.remove()
+        gax2.remove()
+        gax3.remove()
+        gax4.remove()
+    except:
+        pass
+
+    gax1 = fig.add_subplot(2, 2, 1)
+    gax2 = fig.add_subplot(2, 2, 2)
+    gax3 = fig.add_subplot(2, 2, 3)
+    gax4 = fig.add_subplot(2, 2, 4, projection='3d')
+    fig.suptitle(f'Atom {indexer}')
+    #plt.subplots_adjust(bottom=0.25)
+
+    # Clean up after previous plot
+    global current_atoms_violin
+
+    trajs_vol = output_df.iloc[indexer, :]  # Output_df is the output of differences from method=diff
+
+    # Violin plot
+    violin_df = parse_violin(indexer * 3, (indexer + 1) * 3,
+                             vectors1=vectors1,
+                             traj1_name=traj1_name, vectors2=vectors2,
+                             traj2_name=traj2_name)  # start from atom 0, end with atom 3 (excluding)
+    current_atoms_violin = violin_df['atom_id'].unique()
+
+    sb.violinplot(x='datapoint_id', y='coords', hue='traj_id', data=violin_df, split=True, cut=0,
+                  inner='quartile', ax=gax1)
+
+    # Volume explored by atom plot
+    # x x
+    # o x
+    x = [traj1_name, traj2_name]
+    y = [trajs_vol[f'V({traj1_name})/step'], trajs_vol[f'V({traj2_name})/step']]
+    sb.barplot(x=x, y=y, ax=gax3)
+
+    # RMS plot
+    rms_x = rms_out.index
+    rms_y = rms_out.values
+
+    gax2.plot(rms_x, rms_y, zorder=1)
+    gax2.scatter(rms_x[indexer], rms_y[indexer], s=40, color='red', marker='x', zorder=2)
+    gax2.xaxis.set_major_locator(ticker.MultipleLocator(15))
+    gax2.xaxis.set_ticks(gax2.get_xticks())
+    gax2.set_xticklabels(gax2.get_xticks(), rotation=90)
+
+    # 3D plot for the atom
+    _submit_3d_plot(gax4, indexer, atomic_grid_uniq, atomic_grid_uniq2, traj1_name, traj2_name)
+    gax4.set_title('')
+    # fig.tight_layout()
+
+    # plt.draw()
+
+    # slider = Slider(ax=axbox, label='Atom #', valmin=1, valmax=len(atomic_grid_uniq.columns),
+    # valinit=1, valstep=1)
+    # slider.on_changed(lambda val: plot_violin_complex(val, fig))
+
 def _submit_3d_plot(ax, expression, atomic_grid_uniq, atomic_grid_uniq2, traj1_name, traj2_name):
     global current_plot
 
@@ -538,6 +597,11 @@ def plot_cubes(data, color, label, ax):
 
     # plt.show()
 
+def _save_all_complex(i):
+    global gcfig, goutput_df, gtraj1_name, gtraj2_name, grms_out, gatomic_grid_uniq, gatomic_grid_uniq2
+    plot_violin_complex(i, gcfig, goutput_df, gtraj1_name, gtraj2_name, grms_out, gatomic_grid_uniq, gatomic_grid_uniq2)
+    plt.savefig(f'{args.o}/allplot_{i}.png')
+
 def _save_all_violin(i):
     global gfig, gtraj1_name, gtraj2_name, gchunk_size
 
@@ -612,8 +676,6 @@ def _submit_violin(fig, indexer, chunk_size, traj1_name, traj2_name, ax = False)
     plt.draw()
     return(axs_list)
     #####
-
-
 
 def pymol_dynamicity(file_name, traj1name, traj2name, type):
 
@@ -909,6 +971,7 @@ def main(argv=sys.argv[1:]):
                 ax.set_ylabel('R-score')
                 ax.set_title(f'{traj1_name} vs {traj2_name} R-score with grid {args.grid}')
                 ax.set(xlim=(1, len(x)))
+                plt.savefig(f'{args.o}/rscore.png')
 
         print(f'Total amount of coordinates: {nongridded_vectors1_num + nongridded_vectors2_num}, '
               f'after binning {gridded_vectors1_num + gridded_vectors2_num}')
@@ -924,7 +987,7 @@ def main(argv=sys.argv[1:]):
 
             plot_3d_handler(fig, ax, atomic_grid_uniq, atomic_grid_uniq2, traj1_name, traj2_name)
 
-    if args.method == 'violin' and args.plot_violin and False:
+    if args.method == 'violin' or args.method == 'all':
         """
         Using non-unique pre-binning vector data, plot a violin plot to show x,y,z and density positions in a grid using violin plot       
         """
@@ -936,212 +999,125 @@ def main(argv=sys.argv[1:]):
 
         # Control the amount of triples (xyz) plotted at once
         chunk_size = 1
-
-        # Setup the plots
-        fig, axs = plt.subplots(figsize=(15, 12))
-        plt.axis('off')
-        sb.set_theme(style="whitegrid")
-        sb.despine(offset=10)
-        plt.subplots_adjust(bottom=0.25)
-        axbox = fig.add_axes([0.35, 0.05, 0.2, 0.075])
-        save_axbox = fig.add_axes([0.6, 0.075, 0.2, 0.05])
-        save_all_axbox = fig.add_axes([0.6, 0.025, 0.2, 0.05])
-        ###
-
         global gfig, gtraj1_name, gtraj2_name, gchunk_size
-        gfig, gtraj1_name, gtraj2_name, gchunk_size = fig, traj1_name, traj2_name, chunk_size
+        gtraj1_name, gtraj2_name, gchunk_size = traj1_name, traj2_name, chunk_size
+        if args.plot_violin:
+            # Setup the plots
+            global gfig
+            fig, axs = plt.subplots(figsize=(15, 12))
+            gfig = fig
+            plt.axis('off')
+            sb.set_theme(style="whitegrid")
+            sb.despine(offset=10)
+            plt.subplots_adjust(bottom=0.25)
+            axbox = fig.add_axes([0.35, 0.05, 0.2, 0.075])
+            save_axbox = fig.add_axes([0.6, 0.075, 0.2, 0.05])
+            save_all_axbox = fig.add_axes([0.6, 0.025, 0.2, 0.05])
+            ###
 
-        # slider = Slider(ax=axbox, label='Atom/Residue #', valmin=0, valmax=(len(vector1_keys) / chunk_size) - 1,
-        #                valinit=0, valstep=1)
-        # slider.on_changed(plot_violin)
-        save_button = Button(ax=save_axbox, label='Save current')
-        save_button.on_clicked(lambda x: plt.savefig(f'{args.o}/violinplot_{current_atoms_violin}.png'))
 
-        save_all_button = Button(ax=save_all_axbox, label='Save all')
-        save_all_button.on_clicked(save_all_mp_caller)
 
-        text_box = TextBox(axbox, "Atom #", textalignment="center")
-        text_box.on_submit(lambda val: _submit_violin(fig, val, chunk_size, traj1_name, traj2_name))
-        text_box.set_val('1')
 
-        _submit_violin(fig, 1, chunk_size, traj1_name, traj2_name)  # Initial plot
 
-        plt.show()
+            # slider = Slider(ax=axbox, label='Atom/Residue #', valmin=0, valmax=(len(vector1_keys) / chunk_size) - 1,
+            #                valinit=0, valstep=1)
+            # slider.on_changed(plot_violin)
+            save_button = Button(ax=save_axbox, label='Save current')
+            save_button.on_clicked(lambda x: plt.savefig(f'{args.o}/violinplot_{current_atoms_violin}.png'))
+
+            save_all_button = Button(ax=save_all_axbox, label='Save all')
+            save_all_button.on_clicked(save_all_mp_caller)
+
+            text_box = TextBox(axbox, "Atom #", textalignment="center")
+            text_box.on_submit(lambda val: _submit_violin(fig, val, chunk_size, traj1_name, traj2_name))
+            text_box.set_val('1')
+
+            _submit_violin(fig, 1, chunk_size, traj1_name, traj2_name)  # Initial plot
+
+            plt.show()
 
     if args.method == 'all' and args.s:
-        def plot_violin_complex(indexer, fig):
-
-            try:
-                indexer = int(indexer)
-            except:
-                indexer = 1
-
-            if indexer < 1:
-                indexer = 1
-            elif indexer > len(vectors1.columns):
-                indexer = len(vectors1.columns)
-
-            indexer -= 1
-
-            global gax1
-            global gax2
-            global gax3
-            global gax4
-            try:
-                gax1.remove()
-                gax2.remove()
-                gax3.remove()
-                gax4.remove()
-            except:
-                pass
+        global gcfig, goutput_df, grms_out, gatomic_grid_uniq, gatomic_grid_uniq2 # Other needed vars (gtraj1_name, gtraj2_name were assigned to in previous parts)
+        goutput_df, grms_out, gatomic_grid_uniq, gatomic_grid_uniq2 = output_df, rms_out, atomic_grid_uniq, atomic_grid_uniq2
 
 
-            gax1 = fig.add_subplot(2, 2, 1)
-            gax2 = fig.add_subplot(2, 2, 2)
-            gax3 = fig.add_subplot(2, 2, 3)
-            gax4 = fig.add_subplot(2, 2, 4, projection='3d')
-
-            # Clean up after previous plot
-            global current_atoms_violin
-
-            trajs_vol = output_df.iloc[indexer, :]  # Output_df is the output of differences from method=diff
-
-            # Violin plot
-            violin_df = parse_violin(indexer * 3, (indexer + 1) * 3,
-                                     vectors1=vectors1,
-                                     traj1_name=traj1_name, vectors2=vectors2,
-                                     traj2_name=traj2_name)  # start from atom 0, end with atom 3 (excluding)
-            current_atoms_violin = violin_df['atom_id'].unique()
-
-            sb.violinplot(x='datapoint_id', y='coords', hue='traj_id', data=violin_df, split=True, cut=0,
-                          inner='quartile', ax=gax1)
-
-
-
-            # Volume explored by atom plot
-            # x x
-            # o x
-            x = [traj1_name, traj2_name]
-            y = [trajs_vol[f'V({traj1_name})/step'], trajs_vol[f'V({traj2_name})/step']]
-            sb.barplot(x=x, y=y, ax=gax3)
-
-            # RMS plot
-            rms_x = rms_out.index
-            rms_y = rms_out.values
-
-            gax2.plot(rms_x, rms_y, zorder=1)
-            gax2.scatter(rms_x[indexer], rms_y[indexer], s=40, color='red', marker='x', zorder=2)
-            gax2.xaxis.set_major_locator(ticker.MultipleLocator(15))
-            gax2.xaxis.set_ticks(gax2.get_xticks())
-            gax2.set_xticklabels(gax2.get_xticks(), rotation=90)
-
-
-
-            # 3D plot for the atom
-            _submit_3d_plot(gax4, indexer, atomic_grid_uniq, atomic_grid_uniq2, traj1_name, traj2_name)
-            #fig.tight_layout()
-
-            #plt.draw()
-
-            #slider = Slider(ax=axbox, label='Atom #', valmin=1, valmax=len(atomic_grid_uniq.columns),
-                            #valinit=1, valstep=1)
-            #slider.on_changed(lambda val: plot_violin_complex(val, fig))
-
+        def save_all_complex_mp_caller(_):
+            import multiprocessing as mp
+            p = mp.Pool(caller_procs)
+            r = p.map_async(_save_all_complex, iterable=[ i for i in range(1, math.ceil(len(vectors1.columns) / 3)) ])
 
 
         cfig, _ = plt.subplots(figsize=(15, 12))
+
+        gcfig = cfig
         # Setup the plots
         plt.axis('off')
         sb.set_theme(style="whitegrid")
         sb.despine(offset=10)
         plt.subplots_adjust(bottom=0.25)
 
-        axbox = cfig.add_axes([0.3, 0.05, 0.6, 0.075])
-        save_axbox = cfig.add_axes([0.8, 0.075, 0.2, 0.05])
-        save_all_axbox = cfig.add_axes([0.8, 0.025, 0.2, 0.05])
-        save_button = Button(ax=save_axbox, label='Save current')
-        save_button.on_clicked(lambda x: plt.savefig(f'{args.o}/allplot_{current_atoms_violin}.png'))
+        caxbox = cfig.add_axes([0.3, 0.05, 0.6, 0.075])
+        csave_axbox = cfig.add_axes([0.8, 0.075, 0.2, 0.05])
+        csave_all_axbox = cfig.add_axes([0.8, 0.025, 0.2, 0.05])
+        csave_button = Button(ax=csave_axbox, label='Save current')
+        csave_button.on_clicked(lambda x: plt.savefig(f'{args.o}/allplot_{"".join(current_atoms_violin)}.png'))
 
-        save_all_button = Button(ax=save_all_axbox, label='Save all')
-        save_all_button.on_clicked(lambda _: _)
+        csave_all_button = Button(ax=csave_all_axbox, label='Save all')
+        csave_all_button.on_clicked(save_all_complex_mp_caller)
 
         ###
-        text_box = TextBox(axbox, "Atom #", textalignment="center", initial='1')
-        text_box.on_submit(lambda val: plot_violin_complex(val, cfig))
-        text_box.set_val(1)
-        plot_violin_complex(1, cfig)  # Initial plot
+        ctext_box = TextBox(caxbox, "Atom #", textalignment="center", initial='1')
+        ctext_box.on_submit(lambda val: plot_violin_complex(val, cfig, output_df, traj1_name, traj2_name, rms_out, atomic_grid_uniq, atomic_grid_uniq2))
+        ctext_box.set_val('1')
+        plot_violin_complex(1, cfig, output_df, traj1_name, traj2_name, rms_out, atomic_grid_uniq,
+                            atomic_grid_uniq2)  # Initial plot
+        plt.show() # Without plt.show() here, the buttons don't work for some arcane reason ...
 
+    if args.method == 'grid_scan':
 
-        """
-        Make an MP caller for saving en masse        
-        
-        """
-
-
-
-
-
-
-
-    # Add possibility to multiprocess the scan
-    if str.lower(args.method) == 'grid_scan':
-
+        scan_values = [3, 2, 1.5, 1, 0.5, 0.25, 0.10, 0.05]
+        rms_out_list = []
         print('Will perform a scan for an optimal value of --grid parameter. This may take a while.')
         fig, axs = plt.subplots()
-        for gridsize in [3, 2, 1.5, 1, 0.5, 0.25, 0.10]:
+        for gridsize in scan_values:
             args.grid = gridsize
-            atomic_grid = grid(vectors1)
-            atomic_grid_uniq, grid_count = return_unique(atomic_grid)
-            atomic_grid_2 = grid(vectors2)
-            atomic_grid_2_uniq, grid_count_2 = return_unique(atomic_grid_2)
 
-            ### Check statistics ###
-            vector1_keys = list(vectors1.keys())
-            vectors_num = sum([len(vectors1[key]) for key in vector1_keys])
-            grid1_keys = list(atomic_grid.keys())
-            grid2_keys = list(atomic_grid.keys())
-            grid1_size = sum([len(atomic_grid[i]) for i in grid1_keys])
-            grid2_size = sum([len(atomic_grid[i]) for i in grid2_keys])
-            grid1_unq_size = sum([len(atomic_grid_uniq[i]) for i in grid1_keys])
-            grid2_unq_size = sum([len(atomic_grid_2_uniq[i]) for i in grid2_keys])
+            atomic_grid_uniq, atomic_grid_count = grid(vectors1)
+            nongridded_vectors1_num = vectors1.count(axis=0).sum()  # how many vectors before
+            gridded_vectors1_num = atomic_grid_uniq.count(axis=0).sum()  # how many vectors after binning
+            nongridded_vectors2_num = 0
+            gridded_vectors2_num = 0
+            if args.s:
+                atomic_grid_uniq2, atomic_grid_count2 = grid(vectors2)
+                nongridded_vectors2_num = vectors2.count(axis=0).sum()
+                gridded_vectors2_num = atomic_grid_uniq2.count(axis=0).sum()
 
-            print(f'gs={gridsize} >Total amount of vectors {vectors_num * 2}')
-            print(f'gs={gridsize} >Total amount of gridpoints {grid1_size + grid2_size}')
-            print(f'gs={gridsize} >Total amount of unique gridpoints {grid1_unq_size + grid2_unq_size}')
+                rms = grid_rms(atomic_grid_uniq, atomic_grid_uniq2, atomic_grid_count, atomic_grid_count2,
+                               method='genius')
+                int_rms1 = grid_rms(atomic_grid_uniq, atomic_grid_uniq, atomic_grid_count, atomic_grid_count,
+                                    method='genius')
+                int_rms2 = grid_rms(atomic_grid_uniq2, atomic_grid_uniq2, atomic_grid_count2, atomic_grid_count2,
+                                    method='genius')
+                rms = (2 * rms) - (
+                            int_rms1 + int_rms2)  # Final R-score is a difference between twice the pairscore and a sum of internal R-scores of both distributions
+                rms_out = pd.DataFrame(rms, columns=[f'{traj1_name}/{traj2_name}'])
+                rms_out_norm = (rms_out - rms_out.min()) / (rms_out.max() - rms_out.min())
 
-            rms = grid_rms(atomic_grid_uniq, atomic_grid_2_uniq, grid_count, grid_count_2)
+                rms_out_list.append(rms_out_norm)
+            print(f'Total amount of coordinates: {nongridded_vectors1_num + nongridded_vectors2_num}, '
+                  f'after binning {gridded_vectors1_num + gridded_vectors2_num}')
 
-            rms_out = pd.Series(rms).T
-
-
-
-
-
-            rms_keys = list(rms.keys())
-
-            x = [x for x in range(0, len(rms_keys))]
-            y = []
-            for key in rms_keys:
-                y.append(rms[key])
-
-            norm_y1 = [float(i) / max(y) for i in y]
-
-            rms_out = pd.Series(norm_y1).T
-            rms_out = pd.DataFrame(rms_out, columns=[f'{traj1_name}/{traj2_name}'])
-            rms_out.to_csv(f'{args.o}/{args.o}_grid_g{args.grid}_p{args.pop_threshold}.csv')
-
-
-            axs.set_xlabel('Atom #')
-            axs.set_ylabel('Apparent RMS / grid units^2')
-            axs.set_title(f'norm. appRMS with --grid {args.grid}')
-            axs.plot(x, norm_y1, label=args.grid)
-
-        axs.legend()
-        plt.show()
-
-
-
-
+        if args.s:
+            fig, ax = plt.subplots(figsize=(15, 12))
+            x = rms_out_list[0].index + 1
+            for rms, gridval in zip(rms_out_list, scan_values):
+                ax.plot(x.astype(int), rms.values.astype(float), label=gridval)
+            ax.set_xlabel('Atom')
+            ax.set_ylabel('R-score')
+            ax.set_title(f'{traj1_name} vs {traj2_name} normalized R-score gridscan')
+            ax.set(xlim=(1, len(x)))
+            ax.legend()
+            plt.savefig(f'{args.o}/rscore.png')
 
 if __name__ == "__main__":
     main()
