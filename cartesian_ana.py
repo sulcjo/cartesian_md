@@ -18,6 +18,12 @@ from mpl_toolkits.mplot3d.art3d import Poly3DCollection
 import math
 import subprocess
 
+from sklearn.preprocessing import MinMaxScaler
+min_max_scaler = MinMaxScaler()
+
+
+
+
 __prepare_matplotlib()
 caller_procs = 12 # Asynchronous processes for saving output files of 3D and violin plots
 
@@ -72,9 +78,6 @@ def grid(vectors):
     divided = (vectors / args.grid)  # Divide all cells by args.grid #
     divided = divided.apply(np.floor).astype(np.int16) # Floor means that the grids start from 0,
     # not 0 (because then for example x=0.05 / grid=0.1 would end up in bin=0, which is the zeroth one)
-
-    import time
-    start_time = time.time()
 
     """
     Atomic coordinates are assigned into 3D histogram bins with binning parameter set by args.bin.
@@ -140,7 +143,98 @@ def grid(vectors):
 
     return(uniq_df, count_df)
 
-def grid_rms(grid_unq1, grid_unq2, grid_count1, grid_count2, method='genius'):
+def normalize_grid_df(triple1, triple2):
+    # This is for calculating p-values from R-scores, so the R-score no longer varies with magnitude
+    """
+    # FOR WHOLE DF
+    detriplized_unq1 = {}
+    detriplized_unq2 = {}
+
+    # Detriplize
+    for i, (col1, col2) in enumerate(zip(grid_unq1.columns, grid_unq2.columns)):
+        triple1 = pd.DataFrame(grid_unq1[col1].dropna().tolist()).astype(np.float32)
+        triple2 = pd.DataFrame(grid_unq2[col2].dropna().tolist()).astype(np.float32)
+        xs, ys, zs = triple1[0], triple1[1], triple1[2]
+        xs2, ys2, zs2 = triple2[0], triple2[1], triple2[2]
+
+        detriplized_unq1[i * 3] = xs
+        detriplized_unq2[i * 3] = xs2
+        detriplized_unq1[(i * 3) + 1] = ys
+        detriplized_unq2[(i * 3) + 1] = ys2
+        detriplized_unq1[(i * 3) + 2] = zs
+        detriplized_unq2[(i * 3) + 2] = zs2
+
+    detriplized_unq1 = pd.DataFrame(detriplized_unq1)
+    detriplized_unq2 = pd.DataFrame(detriplized_unq2)
+    ###
+
+    # Join
+    joint_df = pd.concat([detriplized_unq1, detriplized_unq2], axis=1)
+    ###
+
+
+    normalized_df = (joint_df-joint_df.min())/(joint_df.max()-joint_df.min())
+    ###
+
+    # Split back
+    grids_unq1 = normalized_df.iloc[:, 0:len(detriplized_unq1.columns)]
+    grids_unq2 = normalized_df.iloc[:, len(detriplized_unq1.columns):]
+    ###
+
+    # Triplize
+    number_of_triples = math.ceil(len(grids_unq1.columns) / 3)
+    new_dict1 = {}
+    new_dict2 = {}
+
+    for triple in range(number_of_triples):
+        # Column triple iterator
+        lowcol = triple * 3
+
+        # XYZ values from three columns into a single column. String of form 'x,y,z'
+        new_dict1[triple] = tuple(map(tuple, grids_unq1.iloc[:, lowcol:lowcol + 3].to_numpy().reshape(-1,3)))
+        new_dict2[triple] = tuple(map(tuple, grids_unq2.iloc[:, lowcol:lowcol + 3].to_numpy().reshape(-1,3)))
+
+
+
+    grids_unq1 = pd.DataFrame(dict([ (k,pd.Series(v)) for k,v in new_dict1.items() ]))
+    grids_unq2 = pd.DataFrame(dict([ (k,pd.Series(v)) for k, v in new_dict2.items() ]))
+
+    return(grids_unq1, grids_unq2)
+    """
+    xs, ys, zs = triple1[0], triple1[1], triple1[2]
+    xs2, ys2, zs2 = triple2[0], triple2[1], triple2[2]
+    detriplized_unq1 = {}
+    detriplized_unq2 = {}
+
+    detriplized_unq1[0] = xs
+    detriplized_unq2[0] = xs2
+    detriplized_unq1[1] = ys
+    detriplized_unq2[1] = ys2
+    detriplized_unq1[2] = zs
+    detriplized_unq2[2] = zs2
+    detriplized_unq1 = pd.DataFrame(detriplized_unq1)
+    detriplized_unq2 = pd.DataFrame(detriplized_unq2)
+    joint_df = pd.concat([detriplized_unq1, detriplized_unq2], axis=1)
+
+    normalized_df = pd.DataFrame(min_max_scaler.fit_transform(joint_df))
+
+    grids_unq1 = pd.DataFrame(normalized_df.iloc[:, 0:len(detriplized_unq1.columns)]).dropna()
+    grids_unq2 = pd.DataFrame(normalized_df.iloc[:, len(detriplized_unq1.columns):]).dropna()
+    grids_unq2.columns = [0,1,2]
+
+
+    #grids_unq_triplized_1 = {0 : tuple(map(tuple, grids_unq1.dropna().to_numpy().reshape(-1,3)))}
+    #grids_unq_triplized_2 = {0 : tuple(map(tuple, grids_unq2.dropna().to_numpy().reshape(-1,3)))}
+
+
+    #grids_unq_triplized_df1 = pd.DataFrame(grids_unq_triplized_1)
+    #grids_unq_triplized_df2 = pd.DataFrame(grids_unq_triplized_2)
+
+    #return(grids_unq_triplized_df1, grids_unq_triplized_df2)
+
+    return(grids_unq1, grids_unq2)
+
+def grid_rms(grid_unq1, grid_unq2, grid_count1, grid_count2, method='genius', normalize=False):
     """
     Calculates the so-called "R-score", which is derived from classic molecular RMSD.
     We have two trajectories, where i-th and j-th indexes denote a unique gridpoint inside each trajectory
@@ -164,6 +258,11 @@ def grid_rms(grid_unq1, grid_unq2, grid_count1, grid_count2, method='genius'):
 
     The higher the R-score for the atom, the more it's positional distribution changed between the two trajectories.
 
+    !! R-score is not invariant to the magnitude of datasets (i.e. for two equivalently different pairs of distributions, but one pair with coordinates ranging
+    from (0, 1) and the other pair ranging (-4, 17), R-score from the other will be higher. !!
+    This is because R-score doesn't measure "binary" difference (such as Mann-Whitney U score), but measures the magnitude of change (i.e. the maximum possible
+    R is infinite)
+
 
     :param grid_unq1:
     :param grid_unq2:
@@ -173,18 +272,47 @@ def grid_rms(grid_unq1, grid_unq2, grid_count1, grid_count2, method='genius'):
     :return:
     """
 
-
-
-
     # Prepare RMSmetric list (one value for one compared atom)
     rms_lst = []
+    rms_norm = []
+
+    def calculate_triple(triple1, triple2, triple1_counts, triple2_counts):
+        sum_counts1, sum_counts2 = sum(triple1_counts), sum(triple2_counts)
+        triple1_counts = pd.DataFrame(triple1_counts)
+
+        xs2, ys2, zs2 = tuple(triple2[0]), tuple(triple2[1]), tuple(triple2[2])
+
+        samples = sum_counts1 * sum_counts2
+
+        def map_matrices(xyz):
+            return (xyz[0] - xs2, xyz[1] - ys2, xyz[2] - zs2)
+
+        def map_counts(xyz):
+            return (np.array(xyz) * triple2_counts)
+
+        # Prepare matrices
+        matrix = pd.DataFrame(triple1.apply(map_matrices, axis=1))
+
+        counts = triple1_counts.apply(map_counts, axis=1)
+        # Calculate ij pairs (each row is a single i, each column inside the array is a single j) including their weights
+        matrix = pd.DataFrame(matrix[0].to_list())
+
+        matrix_squared = matrix ** 2  # matrix columns are now deltas (x, y, z) squared. Sum columns up (deltaX^2 + deltaY^2 + deltaZ^2)
+        matrix_squared_sumcols = matrix_squared.sum(axis=1)
+
+        matrix_squared_sumcols_weighted = matrix_squared_sumcols * counts
+
+        # Calculate sums and the final R-factor for current atom
+        sums = matrix_squared_sumcols_weighted.sum().sum()
+        rmsd = math.sqrt((1 / samples) * sums)
+
+        return(rmsd)
 
     if method == 'genius':
 
         # How many triples
         colsno_1 = len(grid_unq1.columns)
         colsno_2 = len(grid_unq2.columns)
-
 
 
         if colsno_1 != colsno_2:
@@ -200,55 +328,43 @@ def grid_rms(grid_unq1, grid_unq2, grid_count1, grid_count2, method='genius'):
         # unique values (the one where Nones start the earlies in the column)
         # This is solved by calculating column by column
 
-        print(f'Calculating R-Score using gridsize {args.grid} nm')
-        for col1, col2 in zip(grid_unq1.columns, grid_unq2.columns): # This works even if one of the datasets has less atoms
-            rmsd_sum = 0
+        try:
+            print(f'Calculating R-Score using gridsize {args.grid} nm')
+        except NameError:
+            print('Calculating R-Score using external call')
 
-            triple1 = pd.DataFrame(grid_unq1[col1].dropna().tolist())
-            triple2 = pd.DataFrame(grid_unq2[col2].dropna().tolist())
-            triple1_counts = grid_count1[col1].dropna().tolist()
-            triple2_counts = np.array(grid_count2[col2].dropna().tolist())  # has to be matrix multiplied by numpy, so has to be an array
-            sum_counts1, sum_counts2 = sum(triple1_counts), sum(triple2_counts)
-            triple1_counts = pd.DataFrame(triple1_counts)
+        for col1, col2, col1c, col2c in zip(grid_unq1.columns, grid_unq2.columns, grid_count1.columns, grid_count2.columns): # This works even if one of the datasets has less atoms
 
+            triple1 = pd.DataFrame(grid_unq1[col1].tolist()).dropna()
+            triple2 = pd.DataFrame(grid_unq2[col2].tolist()).dropna()
 
-            xs2, ys2, zs2 = tuple(triple2[0]), tuple(triple2[1]), tuple(triple2[2])
+            triple1_counts = grid_count1[col1c].dropna().tolist()
+            triple2_counts = np.array(grid_count2[col2c].dropna().tolist())  # has to be matrix multiplied by numpy, so has to be an array
 
-            samples = sum_counts1*sum_counts2
-
-            def map_matrices(xyz):
-                return(xyz[0] - xs2, xyz[1] - ys2, xyz[2] - zs2)
-
-            def map_counts(xyz):
-                return(np.array(xyz) * triple2_counts)
-
-            # Prepare matrices
-            matrix = pd.DataFrame(triple1.apply(map_matrices, axis=1))
-            counts = triple1_counts.apply(map_counts, axis=1)
-
-            # Calculate ij pairs (each row is a single i, each column inside the array is a single j) including their weights
-            matrix = pd.DataFrame(matrix[0].to_list())
-            matrix = matrix**2
-            matrix = matrix.sum(axis=1)
-            matrix = matrix * counts
-
-            # Calculate sums and the final R-factor for current atom
-            matrix_sum = matrix.sum().sum()
-            rmsd = math.sqrt((1 / samples) * matrix_sum)
+            rmsd = calculate_triple(triple1, triple2, triple1_counts, triple2_counts)
 
             # Append to list
             rms_lst.append(rmsd)
 
+
+            ### Calculate R-score for a distribution that ranges from 0 to 1 (for P-value testing)
+
+            triple1_n, triple2_n = normalize_grid_df(triple1, triple2)
+
+            rmsd_norm = calculate_triple(triple1_n, triple2_n, triple1_counts, triple2_counts)
+
+            rms_norm.append(rmsd_norm)
+
     elif method == 'smart':
         print(f'Calculating R-Score using gridsize {args.grid} nm')
-        for col1, col2 in zip(grid_unq1.columns,
-                              grid_unq2.columns):  # This works even if one of the datasets has less atoms
+        for col1, col2, col1c, col2c in zip(grid_unq1.columns,
+                              grid_unq2.columns, grid_count1.columns, grid_count2.columns):  # This works even if one of the datasets has less atoms
             rmsd_sum = 0
 
-            triple1 = pd.DataFrame(grid_unq1[col1].dropna().tolist())
-            triple2 = pd.DataFrame(grid_unq2[col2].dropna().tolist())
-            triple1_counts = tuple(grid_count1[col1].dropna().tolist())
-            triple2_counts = np.array(grid_count2[col2].dropna().tolist())  # has to be matrix multiplied by numpy, so has to be an array
+            triple1 = pd.DataFrame(grid_unq1[col1].dropna().tolist()).dropna()
+            triple2 = pd.DataFrame(grid_unq2[col2].dropna().tolist()).dropna()
+            triple1_counts = tuple(grid_count1[col1c].dropna().tolist())
+            triple2_counts = np.array(grid_count2[col2c].dropna().tolist())  # has to be matrix multiplied by numpy, so has to be an array
 
             xs2, ys2, zs2 = tuple(triple2[0]), tuple(triple2[1]), tuple(triple2[2])
             sum_counts1, sum_counts2 = sum(triple1_counts), sum(triple2_counts)
@@ -262,7 +378,8 @@ def grid_rms(grid_unq1, grid_unq2, grid_count1, grid_count2, method='genius'):
             matrix_z = []
             matrix_weight = []
 
-            while i < len(triple1):  # This is faster than using list comprehension
+            while i < len(triple1) :  # This is faster than using list comprehension
+
 
                 # X-term (single i with all j), Y-term, Z-term
                 x_term_i = triple1.iloc[i, 0] - xs2  # Create a series for i=1 minus all possible j
@@ -270,7 +387,9 @@ def grid_rms(grid_unq1, grid_unq2, grid_count1, grid_count2, method='genius'):
                 z_term_i = triple1.iloc[i, 2] - zs2
 
                 # Weights for all pairs
+
                 i_weight = triple1_counts[i] * triple2_counts
+
 
                 matrix_x.append(x_term_i)
                 matrix_y.append(y_term_i)
@@ -308,23 +427,24 @@ def grid_rms(grid_unq1, grid_unq2, grid_count1, grid_count2, method='genius'):
             print(
                 'WARNING grid-datasets used for RMS calculation are of different size, RMS value may be faulty. Will iterate through'
                 'atoms until one of the datasets runs out.')
-        for col1, col2 in zip(grid_unq1.columns, grid_unq2.columns): # This works even if one of the datasets has less atoms
-            rmsd_sum = 0
+        for col1, col2, col1c, col2c in zip(grid_unq1.columns, grid_unq2.columns, grid_count1.columns, grid_count2.columns): # This works even if one of the datasets has less atoms
 
-            triple1 = pd.DataFrame(grid_unq1[col1].dropna().tolist())
-            triple2 = pd.DataFrame(grid_unq2[col2].dropna().tolist())
-            triple1_counts = tuple(grid_count1[col1].dropna().tolist())
-            triple2_counts = tuple(grid_count2[col2].dropna().tolist())
+            triple1 = pd.DataFrame(grid_unq1[col1].dropna().tolist()).dropna()
+            triple2 = pd.DataFrame(grid_unq2[col2].dropna().tolist()).dropna()
+
+            triple1_counts = tuple(grid_count1[col1c].dropna().tolist())
+            triple2_counts = tuple(grid_count2[col2c].dropna().tolist())
 
             xs, ys, zs = tuple(triple1[0]), tuple(triple1[1]), tuple(triple1[2])
             xs2, ys2, zs2 = tuple(triple2[0]), tuple(triple2[1]), tuple(triple2[2])
 
             sum_counts1, sum_counts2 = sum(triple1_counts), sum(triple2_counts)
 
+
             samples = sum_counts1*sum_counts2
 
             i = 0
-            j = 0
+
 
             rmsd_sum = 0
             while i < len(xs):
@@ -336,9 +456,9 @@ def grid_rms(grid_unq1, grid_unq2, grid_count1, grid_count2, method='genius'):
                 i += 1
 
             rmsd = math.sqrt((1/samples) * rmsd_sum)
-            rms_lst_brute.append(rmsd)
+            rms_lst.append(rmsd)
 
-    return(np.array(rms_lst))
+    return(np.array(rms_lst), np.array(rms_norm))
 
 def parse_violin(start, stop, vectors1, traj1_name, vectors2=pd.DataFrame(), traj2_name=False):
 
@@ -769,7 +889,7 @@ def main(argv=sys.argv[1:]):
     parser.add_argument('--gridbackend', type=int, help='Backend to use for unique grid assignment', required=False, default=1, choices=(0,1))
 
     ## Plotting
-    parser.add_argument("--p", type=str2bool, help='Disable all visualization and plotting, overrides all other plot parameters', default=False)
+    parser.add_argument("--p", type=str2bool, help='Disable all visualization and plotting, overrides all other plot parameters. True=NO plots', default=False)
     parser.add_argument("--pdbshow", type=str2bool, help='Creates a PyMol visualization of dynamicity and position change, requires --pdbs. '
                                                     'Default=True', default=True)
     parser.add_argument("--plotrscore", type=str2bool, help='Plot R-scores from grid, defaults to True', const=True, default=True, nargs='?')
@@ -827,6 +947,18 @@ def main(argv=sys.argv[1:]):
         except:
             print(f'{args.s} not found, will proceed with only one vector file analysis, obtained from --f')
             args.s = False
+    else:
+        with open('outputs.txt', 'at') as file:  # This assumes that --method=all !
+
+            diffname = 'diff_atom.csv'
+            confname = 'nan'
+            grids1name = f'{traj1_name}_grid_g{args.grid}.cart'
+            grids2name = 'nan'
+            grids1count = f'{traj1_name}_grid_g{args.grid}_count.cart'
+            grids2count = 'nan'
+
+            file.write(
+                f'{args.f},{args.s},{args.o},{diffname},{confname},{grids1name},{grids2name},{grids1count},{grids2count}\n')
     ##
 
     # Setup output directory name and create it if necessary
@@ -935,14 +1067,17 @@ def main(argv=sys.argv[1:]):
             nongridded_vectors2_num = vectors2.count(axis=0).sum()
             gridded_vectors2_num = atomic_grid_uniq2.count(axis=0).sum()
 
-            rms = grid_rms(atomic_grid_uniq, atomic_grid_uniq2, atomic_grid_count, atomic_grid_count2, method='genius')
-            int_rms1 = grid_rms(atomic_grid_uniq, atomic_grid_uniq, atomic_grid_count, atomic_grid_count, method='genius')
-            int_rms2 = grid_rms(atomic_grid_uniq2, atomic_grid_uniq2, atomic_grid_count2, atomic_grid_count2, method='genius')
+            rms, rms_n = grid_rms(atomic_grid_uniq, atomic_grid_uniq2, atomic_grid_count, atomic_grid_count2, method='genius')
+            int_rms1, int_rms1_n = grid_rms(atomic_grid_uniq, atomic_grid_uniq, atomic_grid_count, atomic_grid_count, method='genius')
+            int_rms2, int_rms2_n = grid_rms(atomic_grid_uniq2, atomic_grid_uniq2, atomic_grid_count2, atomic_grid_count2, method='genius')
+
             rms = (2 * rms) - (int_rms1+int_rms2) # Final R-score is a difference between twice the pairscore and a sum of internal R-scores of both distributions
+            rms_n = (2 * rms_n) - (int_rms1_n+int_rms2_n)
 
             # Output results of grid method
             rms_out = pd.DataFrame(rms, columns=[f'{traj1_name}/{traj2_name}'])
             rms_out.to_csv(f'{args.o}/{traj1_name}_{traj2_name}_grid_g{args.grid}.csv')
+
             rms_out_norm = (rms_out-rms_out.min())/(rms_out.max()-rms_out.min())
             rms_out_norm.to_csv(f'{args.o}/{traj1_name}_{traj2_name}_grid_g{args.grid}_normalized.csv')
 
@@ -963,15 +1098,20 @@ def main(argv=sys.argv[1:]):
                 if args.pdbshow:
                     pymol_dynamicity(pdb_filename, traj1_name, traj2_name, type='conf')
 
+
             if args.plotrscore:
+
                 fig, ax = plt.subplots(figsize=(15, 12))
                 x = rms_out.index + 1
-                ax.plot(x.astype(int), rms_out.values.astype(float))
+                ax.plot(x.astype(int), rms_out.values.astype(float), label='R')
+                ax.plot(x.astype(int), rms_n, label='norm')
                 ax.set_xlabel('Atom')
                 ax.set_ylabel('R-score')
                 ax.set_title(f'{traj1_name} vs {traj2_name} R-score with grid {args.grid}')
                 ax.set(xlim=(1, len(x)))
+                ax.legend()
                 plt.savefig(f'{args.o}/rscore.png')
+
 
         print(f'Total amount of coordinates: {nongridded_vectors1_num + nongridded_vectors2_num}, '
               f'after binning {gridded_vectors1_num + gridded_vectors2_num}')
