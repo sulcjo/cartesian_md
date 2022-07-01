@@ -106,7 +106,7 @@ def generate_distribution(low, high, lowshift, highshift, datapoints=1000):
     def generate_gaussian(distribution):
 
         mean = random.randrange(low, high) # random mean
-        sd = random.randint(1, 8) # random stdev
+        sd = random.randint(1, 2) # random stdev originally 8 max, change back
         gaussians = norm.pdf(x, loc=mean, scale=sd)
         return(distribution + gaussians)
 
@@ -126,7 +126,7 @@ def generate_distribution(low, high, lowshift, highshift, datapoints=1000):
     def generate_skewed(distribution):
         mean = random.randrange(low, high)
         a = random.randrange(-10, 10) # Negative a skewed left, positive skewed right. 0 means normal.
-        sd = random.randint(1, 6)  # random stdev
+        sd = random.randint(1, 2)  # random stdev, originally 6 max, change back
         skewed = sk.pdf(x, loc=mean, a=a, scale=sd)
         return (distribution + skewed)
 
@@ -166,8 +166,8 @@ def generate_distribution(low, high, lowshift, highshift, datapoints=1000):
 ####
 ####
 ####
-Tot = 1000000 #
-Datapoints = 500
+Tot = 2500000 #
+Datapoints = 250
 ####
 ####
 ####
@@ -214,8 +214,8 @@ for i in range(Tot):
 
 df1 = pd.DataFrame(triples1)
 df2 = pd.DataFrame(triples2)
-df1.to_parquet('/run/timeshift/backup/IOCB/cartesian/rscore_testing/b/df1')
-df2.to_parquet('/run/timeshift/backup/IOCB/cartesian/rscore_testing/b/df2')
+#df1.to_parquet('/run/timeshift/backup/IOCB/cartesian/rscore_testing/d/df1')
+#df2.to_parquet('/run/timeshift/backup/IOCB/cartesian/rscore_testing/d/df2')
 
 global rms_list
 rms_list = []
@@ -263,10 +263,10 @@ print(f'{Tot} distributions with {Datapoints} datapoints, {time.time() - start} 
 #print(rms_list[0])
 import seaborn as sns
 import json
-with open('/run/timeshift/backup/IOCB/cartesian/rscore_testing/rscores.json', 'w') as outfile:
+with open('/run/timeshift/backup/IOCB/cartesian/rscore_testing/e/rscores.json', 'w') as outfile:
     json.dump(rms_list[0], outfile)
 sns.histplot(rms_list[0], stat='probability', bins=100)
-plt.savefig('/run/timeshift/backup/IOCB/cartesian/rscore_testing/hist.png')
+plt.savefig('/run/timeshift/backup/IOCB/cartesian/rscore_testing/e/hist.png')
 
 # 1000000 distributions with 500 datapoints, 22633.361141443253
 

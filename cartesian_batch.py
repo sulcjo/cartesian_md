@@ -353,14 +353,14 @@ def pymol_dynamicity():
             pymol_sub2 = 'cmd.alter("perturbed", "vdw=0.6")'
             pymol_command = f"set orthoscopic, on; bg_color white; spectrum b,gray70_gray70_raspberry,minimum=0,maximum=1;select perturbed,b>0;set seq_view; show lines; {pymol_sub2}; show_as sticks cartoon sphere,perturbed;{pymol_sub1}; set cartoon_discrete_colors, on; set valence, 1; set label_shadow_mode, 2; set label_size,-0.6; set label_font_id,7; set label_outline_color, black; set label_color, white; set label_position,(0,0,2)"
             # Add something like this to cartesian_ana in the future
-            p = subprocess.Popen(f"pymol dynamically_perturbed_atoms.pdb -d '{pymol_command}'", stdout=subprocess.PIPE, shell=True)
+            p = subprocess.Popen(f"pymol {args.o}/dynamically_perturbed_atoms.pdb -d '{pymol_command}'", stdout=subprocess.PIPE, shell=True)
         if kind == 2: # Shows which atoms explored more volume in which trajectory, but only for those where p-value is lower than args.pval. Others are represented by B-score=0
             pymol_sub1 = 'select zero, b "=" 0'
             pymol_sub2 = 'cmd.alter("*", "vdw=0.6")'
             pymol_sub3 = f'cmd.label("more_in_{args.id[0]}","str(ID)")'
             pymol_sub4 = f'cmd.label("more_in_{args.id[1]}","str(ID)")'
             pymol_command = f"set orthoscopic, on; bg_color white; spectrum b, marine_gray70_raspberry; {pymol_sub1}; select more_in_{args.id[0]}, b > 0; select more_in_{args.id[1]}, b < 0; color gray70, zero; set seq_view; show lines; {pymol_sub2}; show_as sticks cartoon sphere,more_in_{args.id[0]};show_as sticks cartoon sphere,more_in_{args.id[1]};{pymol_sub3};{pymol_sub4}; set cartoon_discrete_colors, on; set valence, 1; set label_shadow_mode, 2; set label_size,-0.6; set label_font_id,7; set label_outline_color, black; set label_color, white; set label_position,(0,0,2)"
-            p = subprocess.Popen(f"pymol dynamically_perturbed_atoms_rankings.pdb -d '{pymol_command}'", stdout=subprocess.PIPE, shell=True)
+            p = subprocess.Popen(f"pymol {args.o}/dynamically_perturbed_atoms_rankings.pdb -d '{pymol_command}'", stdout=subprocess.PIPE, shell=True)
 
 def mwu_score_ranking(volsteps_df, mwu_scores, m, n, mwu_pvals):
     baseline = m*n*0.5 # mwu score of two exactly equal distributions
@@ -406,6 +406,7 @@ def main(argv=sys.argv[1:]):
     # Handle data loading
     keys1, keys2, diff_paths, rms_out_paths, grids1_paths, grids2_paths, gridscount1_paths, gridscount2_paths = parse_paths(args.f)
 
+
     """
     ########################################
     # Testing for perturbation of dynamics #
@@ -414,52 +415,83 @@ def main(argv=sys.argv[1:]):
 
     # Handle dynamicity aggregation and statistical testing
     volumes_traj1, volumes_traj2, volsteps_traj1, volsteps_traj2 = aggregate_volumes(diff_paths) # ==> volumes_traj1.T, volumes_traj2.T into boxplots or violins, compare the two. Use volsteps datasets, independent on traj length
-    mwu_atoms, mwu_scores, mwu_pvals = mann_whitney_u_volumes(volsteps_traj1, volsteps_traj2) # ==> results of the Mann-Whitney U test. (atom_n, score, p-value)
 
+
+    mwu_atoms, mwu_scores, mwu_pvals = mann_whitney_u_volumes(volsteps_traj1, volsteps_traj2) # ==> results of the Mann-Whitney U test. (atom_n, score, p-value)
 
     # Plot atoms where the distribution changed significantly (p_val < args.pval) as boxplots
     volsteps_traj1_pvals, volsteps_traj2_pvals, only_perturbed_atoms = drop_above_pval(mwu_pvals, mwu_scores, volsteps_traj1, volsteps_traj2) # ==> two datasets only containing atoms proven to be perturbed, a dataframe prepared for b-coloring with all atoms and binary yes/no for perturbed
-    plot_dynamical_distributions(volsteps_traj1_pvals, volsteps_traj2_pvals, stacking=True) # Stacked or unstacked boxplot combined with stripplot
 
-    # Rank change of dynamicity, which variant more/less explored volume
-    m = len(volumes_traj1.columns) # amount of samples m
-    n = len(volumes_traj2.columns) # amount of samples n
-    mwu_score_delta_df, total_dynamicity_df = mwu_score_ranking(volumes_traj1, mwu_scores, m, n, mwu_pvals) # only one dataframe needed, they both contain scores and atom numbers
+    m = len(volumes_traj1.columns)  # amount of samples m
+    n = len(volumes_traj2.columns)  # amount of samples n
 
-    # Save relevant dynamicity datasets
-    total_dynamicity_df.to_csv(f'{args.o}/{m}x{args.id[0]},{n}x{args.id[1]}.csv')
+    pdb_kind1_header = f'REMARK B-Factor 1 means that the atom was identified as perturbed by comparing explored\n' \
+                       f'REMARK volume distributions using MWU-test with a p-value limit of {args.pval}\n' \
+                       f'REMARK ANALYZED {m}x{args.id[0]},{n}x{args.id[1]} \n'
 
-    """
-    Use PyMol API later    
-    """
-    if args.pdbs:
+    pdb_kind2_header = f'REMARK B-Factor 0 means that the atom was NOT identified as perturbed by comparing explored\n' \
+                       f'REMARK volume distributions using MWU-test with a p-value limit of {args.pval}. Positive B-Factor\n' \
+                       f'REMARK means that explored volume was larger for the -{args.id[0]}- batch of trajectories and vice-versa.\n' \
+                       f'REMARK B-factors are MWU scores with subtracted baselines (m*n*0.5) that represent the score in\n' \
+                       f'REMARK case of both distributions being identical.\n' \
+                       f'REMARK ANALYZED {m}x{args.id[0]},{n}x{args.id[1]} \n'
 
-        # Prepare .pdb for plot of kind=1 (show perturbed atoms)
-        pdb_kind1 = write_to_pdb_beta(args.pdbs, only_perturbed_atoms)
-        pdb_kind1_header = f'REMARK B-Factor 1 means that the atom was identified as perturbed by comparing explored\n' \
-                           f'REMARK volume distributions using MWU-test with a p-value limit of {args.pval}\n' \
-                           f'REMARK ANALYZED {m}x{args.id[0]},{n}x{args.id[1]} \n'
-        pdb_kind2 = write_to_pdb_beta(args.pdbs, mwu_score_delta_df)
-        pdb_kind2_header = f'REMARK B-Factor 0 means that the atom was NOT identified as perturbed by comparing explored\n' \
-                           f'REMARK volume distributions using MWU-test with a p-value limit of {args.pval}. Positive B-Factor\n' \
-                           f'REMARK means that explored volume was larger for the -{args.id[0]}- batch of trajectories and vice-versa.\n' \
-                           f'REMARK B-factors are MWU scores with subtracted baselines (m*n*0.5) that represent the score in\n' \
-                           f'REMARK case of both distributions being identical.\n' \
-                           f'REMARK ANALYZED {m}x{args.id[0]},{n}x{args.id[1]} \n'
-        with open(f'{args.o}/dynamically_perturbed_atoms.pdb', 'w') as file:
-            file.write(pdb_kind1_header+pdb_kind1)
-        with open(f'{args.o}/dynamically_perturbed_atoms_rankings.pdb', 'w') as file:
-            file.write(pdb_kind2_header+pdb_kind2)
+    if not volsteps_traj1_pvals.empty and not volsteps_traj2_pvals.empty:
 
-        if args.pdbshow:
-            pymol_dynamicity()
+        plot_dynamical_distributions(volsteps_traj1_pvals, volsteps_traj2_pvals, stacking=True) # Stacked or unstacked boxplot combined with stripplot
+
+        # Rank change of dynamicity, which variant more/less explored volume
+
+        mwu_score_delta_df, total_dynamicity_df = mwu_score_ranking(volumes_traj1, mwu_scores, m, n, mwu_pvals) # only one dataframe needed, they both contain scores and atom numbers
+
+        # Save relevant dynamicity datasets
+        total_dynamicity_df.to_csv(f'{args.o}/{m}x{args.id[0]},{n}x{args.id[1]}.csv')
+
+        """
+        Use PyMol API later    
+        """
+        if args.pdbs:
+
+            # Prepare .pdb for plot of kind=1 (show perturbed atoms)
+            pdb_kind1 = write_to_pdb_beta(args.pdbs, only_perturbed_atoms)
+
+            pdb_kind2 = write_to_pdb_beta(args.pdbs, mwu_score_delta_df)
+
+            with open(f'{args.o}/dynamically_perturbed_atoms.pdb', 'w') as file:
+                file.write(pdb_kind1_header + pdb_kind1)
+            with open(f'{args.o}/dynamically_perturbed_atoms_rankings.pdb', 'w') as file:
+                file.write(pdb_kind2_header + pdb_kind2)
+
+    else:
+        print(f'For explored volume analysis, no atoms passed the MWU test with given p-value {args.pval}')
+        if args.pdbs:
+
+            # Prepare .pdb for plot of kind=1 (show perturbed atoms)
+
+
+            zeros_series = pd.Series([0 for i in range(len(volumes_traj1))])
+            pdb_kind1 = write_to_pdb_beta(args.pdbs, zeros_series)
+            pdb_kind2 = write_to_pdb_beta(args.pdbs, zeros_series)
+
+            with open(f'{args.o}/dynamically_perturbed_atoms.pdb', 'w') as file:
+                file.write(pdb_kind1_header + pdb_kind1)
+            with open(f'{args.o}/dynamically_perturbed_atoms_rankings.pdb', 'w') as file:
+                file.write(pdb_kind2_header + pdb_kind2)
+
+    if args.pdbs and args.pdbshow:
+        pymol_dynamicity()
+
+
+
+
+
 
     """
     @@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
     @ Testing for perturbation of conformation #
     @@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
     """
-
+    exit()
 
     grids1a, grids2a = aggregate_conformation(grids1_paths)
     counts1a, counts2a = aggregate_conformation(gridscount1_paths)

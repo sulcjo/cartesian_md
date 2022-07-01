@@ -106,6 +106,8 @@ def write_to_pdb_beta(pdb, delta):
 
     new_pdb = ''.join(new_lines)
 
+
+
     return(new_pdb)
 
 def main(argv=sys.argv[1:]):

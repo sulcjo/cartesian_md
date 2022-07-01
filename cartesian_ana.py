@@ -877,8 +877,8 @@ def main(argv=sys.argv[1:]):
 
 
     # cartesian grid unique arguments
-    parser.add_argument('--method', type=strlower, help='Method - grid, grid_scan, violin, volume, all; defaults to all', required=False, default='grid',
-                        choices=('grid','grid_scan','violin','volume','all'))
+    parser.add_argument('--method', type=strlower, help='Method - fourier, grid, grid_scan, violin, volume, all; defaults to all', required=False, default='grid',
+                        choices=('fourier', 'grid','grid_scan','violin','volume','all'))
 
     ## Grid method specifics
     parser.add_argument('--grid', type=float, help='Grid size in nm, defaults to 0.1 nm', required=False, default=0.1)
@@ -1258,6 +1258,161 @@ def main(argv=sys.argv[1:]):
             ax.set(xlim=(1, len(x)))
             ax.legend()
             plt.savefig(f'{args.o}/rscore.png')
+
+    if args.method == 'fourier':
+        import scipy
+        from scipy.fft import rfftn, fftfreq, irfftn, rfft, fftshift, irfft, fft
+        """
+        # Single atom solution
+        atom = 443 #443
+
+        # Get vectors for the current atom
+        triple1 = vectors1.iloc[:, atom*3 : (atom*3)+3].to_numpy().reshape(-1, 3)
+        triple2 = vectors2.iloc[:, atom*3 : (atom*3)+3].to_numpy().reshape(-1, 3)
+        """
+
+        # Whole molecule solution
+        triples = math.ceil(len(vectors1.columns) / 3)
+        t1x = {}
+        t1y = {}
+        t1z = {}
+        t2x = {}
+        t2y = {}
+        t2z = {}
+
+        for ind in range(triples):
+            triple1 = vectors1.iloc[:, ind*3:(ind*3)+3]
+            triple2 = vectors2.iloc[:, ind*3:(ind*3)+3]
+
+            t1x[ind] = triple1.iloc[:, 0]
+            t1y[ind] = triple1.iloc[:, 1]
+            t1z[ind] = triple1.iloc[:, 2]
+            t2x[ind] = triple2.iloc[:, 0]
+            t2y[ind] = triple2.iloc[:, 1]
+            t2z[ind] = triple2.iloc[:, 2]
+
+
+        # Mean of X, Y, Z coordinates over the whole molecule in time
+        molecule1x = pd.DataFrame(t1x).mean(axis=1)
+        molecule1y = pd.DataFrame(t1y).mean(axis=1)
+        molecule1z = pd.DataFrame(t1z).mean(axis=1)
+        molecule2x = pd.DataFrame(t2x).mean(axis=1)
+        molecule2y = pd.DataFrame(t2y).mean(axis=1)
+        molecule2z = pd.DataFrame(t2z).mean(axis=1)
+
+        # Concatenate
+        triple1 = pd.concat([molecule1x, molecule1y, molecule1z], axis=1).to_numpy()
+        triple2 = pd.concat([molecule2x, molecule2y, molecule2z], axis=1).to_numpy()
+
+        # Differentiate once with respect to time to get velocities, axis by axis
+        velocities1_axes = np.array( [np.diff(triple1[:, 0], n=1), np.diff(triple1[:, 1], n=1), np.diff(triple1[:, 2], n=1) ]).reshape(-1, 3)
+        velocities2_axes = np.array( [np.diff(triple2[:, 0], n=1), np.diff(triple2[:, 1], n=1), np.diff(triple2[:, 2], n=1) ]).reshape(-1, 3)
+
+        # Dot product of Vx, Vy, Vz
+        velocities1 = np.dot(velocities1_axes[:, 0], velocities1_axes[:, 1])
+        velocities1 = np.dot(velocities1, velocities1_axes[:, 2])
+        velocities2 = np.dot(velocities2_axes[:, 0], velocities2_axes[:, 1])
+        velocities2 = np.dot(velocities2, velocities2_axes[:, 2])
+
+
+
+        ###
+
+        # To get vibrational spectra, velocity ACF has to be mass-weighted!
+
+        ###
+
+
+        # Smoothen velocities with Savitsky-Golay
+        from scipy.signal import savgol_filter
+        #velocities1 = savgol_filter(velocities1, window_length=1000, polyorder=3)
+        #velocities2 = savgol_filter(velocities2, window_length=1000, polyorder=3)
+
+        def autocorrelate(dataset):
+            mean = np.mean(dataset)
+            # Variance
+            var = np.var(dataset)
+            # Normalized data
+            ndata = dataset - mean
+            acorr = np.correlate(ndata, ndata, 'full')[len(ndata) - 1:]
+            acorr = acorr / var / len(ndata)
+
+
+
+            return(acorr)
+
+        # Autocorrelate velocities
+        velocities1_acf = autocorrelate(velocities1)
+        velocities2_acf = autocorrelate(velocities2)
+        #velocities1_acf = velocities1_acf[2000:]
+        #velocities2_acf = velocities2_acf[2000:]
+
+
+        #velocities1_acf = velocities1
+        #velocities2_acf = velocities2
+
+
+        ###
+        #
+        #
+        #  SAMPLING FREQUENCY AS PARAMETER IN FS
+        #
+        #
+        ###
+
+        # Fourier Transform ACF into frequency domain
+        N = len(velocities1_acf)  # Handle cases where vectors are not of the same length
+        T = 1.0 / 2  # ?? think about this # sample spacing
+
+        fig, ax = plt.subplots(ncols=2)
+        ffts1 = []
+        ffts2 = []
+
+
+        new_fft1 = rfft(velocities1_acf)
+        new_fft2 = rfft(velocities2_acf)
+
+        fft_plot1 = np.abs(new_fft1) # calculates sqrt(a^2 + i^2)
+        fft_plot2 = np.abs(new_fft2)
+
+        xf = fftfreq(N, T)
+
+        ax[0].plot(xf[:N // 2]* 33356, fft_plot1[:N // 2], label=f'Vectors 1')
+        ax[0].plot(xf[:N // 2]* 33356, fft_plot2[:N // 2], label=f'Vectors 2')
+        ax[0].set_title('FFT')
+
+        # ax[0].set_xlabel('Frequency fs^-1 (10e-15 Hz)')
+        ax[0].legend()
+        ax[0].set_ylabel('Magnitude')
+        #ax[0].set_yscale('symlog')
+        ax[0].set_xlabel('Wavenumber / cm-1')
+        ax[0].set(xlim=(0,N))
+
+        ax[1].plot(velocities1_acf, label='1')
+        ax[1].plot(velocities2_acf, label='2')
+        ax[1].legend()
+
+
+        """
+        # For filtering
+        for i, (fft_i, fft_j) in enumerate(zip(ffts1, ffts2)):
+
+            new_ifft1 = irfft(fft_i)
+            #new_ifft2 = irfft(fft_j)
+
+            ax[i+1].plot(new_ifft1, label=f'axis={i}, vectors=1', color='blue')
+            ax[i+1].set_title('iFFT cut')
+            #ax[i+1].plot(new_ifft2, label=f'axis={i}, vectors=2', color='orange')
+        """
+
+        plt.show()
+
+
+
+        #for coef, freq in zip(yf1[0], xf1):
+        #    if coef:
+        #        print('{c:>6} * exp(2 pi i t * {f})'.format(c=coef, f=freq))
+
 
 if __name__ == "__main__":
     main()
