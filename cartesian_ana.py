@@ -508,7 +508,7 @@ def grid_rms(grid_unq1, grid_unq2, grid_count1, grid_count2, method='genius'):
             rmsd = math.sqrt((1/samples) * rmsd_sum)
             rms_lst.append(rmsd)
 
-    return(np.array(rms_lst), np.array(rms_norm))
+    return(np.array(rms_lst[0]), np.array(rms_norm[0]))
 
 def parse_violin(start, stop, vectors1, traj1_name, vectors2=pd.DataFrame(), traj2_name=False):
 

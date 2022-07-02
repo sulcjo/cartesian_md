@@ -6,12 +6,15 @@ import numpy as np
 import matplotlib.pyplot as plt
 from scipy.optimize import curve_fit
 from scipy.special import factorial
-from scipy.stats import poisson, chi2, gamma, norm, lognorm, beta, rayleigh, weibull_min, skewnorm
+from scipy.stats import poisson, chi2, gamma, norm, lognorm, beta, rayleigh, weibull_min, skewnorm, expon, exponpow, exponnorm
 
 def fit_function(k, a, b, c):
     '''poisson function, parameter lamb is the fit parameter'''
     #return beta.pdf(k, a, b)
     return(skewnorm.pdf(k, a, b, c))
+    #return(exponpow.pdf(k, a, b, c))
+    #return(exponnorm.pdf(k, a, b, c))
+
 
 
 
@@ -34,7 +37,7 @@ rscores = np.concatenate([rscores, rscores2, rscores3])
 
 
 #weights = np.ones_like(rscores) / (len(rscores))
-entries, bin_edges, patches = plt.hist(rscores, bins=100, label='Data', density=True)
+entries, bin_edges, patches = plt.hist(rscores, bins=1000, label='Data', density=True)
 bin_middles = 0.5 * (bin_edges[1:] + bin_edges[:-1])
 #histo, bin_edges = np.histogram(rscores, bins=250, normed=False, density=True) # For chi-squared test
 
@@ -43,7 +46,7 @@ bin_middles = 0.5 * (bin_edges[1:] + bin_edges[:-1])
 
 
 # fit with curve_fit
-parameters, cov_matrix = curve_fit(fit_function, bin_middles, entries)
+parameters, cov_matrix = curve_fit(fit_function, bin_middles, entries, gtol=1e-12, ftol=1e-12, xtol=1e-12, method='trf')
 
 # plot poisson-deviation with fitted parameter
 x_plot = np.arange(0, 2, 0.01)
@@ -74,6 +77,7 @@ probability_df = pd.DataFrame([x_plot, beta.cdf(x_plot, a=1.55239973, b=4.486486
 #probability_df.iloc[:, 1] = probability_df.iloc[:, 1] / probability_df.iloc[:, 1].sum() # Make it so probabilities integrate to 1
 
 #probability_df.iloc[:, 1] = (probability_df.iloc[:, 1]-probability_df.iloc[:, 1].min())/(probability_df.iloc[:, 1].max()-probability_df.iloc[:, 1].min())
+exit()
 
 with pd.option_context('display.max_rows', None, 'display.max_columns', None):  # more options can be specified also
     print(probability_df)

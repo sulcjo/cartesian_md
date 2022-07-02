@@ -50,23 +50,25 @@ def parse_paths(output_file):
 
     # Case 1 is when cartesian_ana.py was used to do pairwise comparisons (i.e. using both --f and --s flags, then data for both trajectories are on a single line)
     for line in lines:
-        split_line = line.split(',')
+        try:
+            split_line = line.split(',')
 
+            keys1.append(split_line[0])
+            keys2.append(split_line[1])
+            dir = split_line[2]
+            diff_paths.append(f'{dir}/{split_line[3]}')
+            rms_out_paths.append(f'{dir}/{split_line[4]}')
+            grids1_paths.append(f'{dir}/{split_line[5]}')
+            grids2_paths.append(f'{dir}/{split_line[6]}')
+            grids1_count_paths.append(f'{dir}/{split_line[7]}')
+            grids2_count_paths.append(f'{dir}/{split_line[8]}')
 
-        keys1.append(split_line[0])
-        keys2.append(split_line[1])
-        dir = split_line[2]
-        diff_paths.append(f'{dir}/{split_line[3]}')
-        rms_out_paths.append(f'{dir}/{split_line[4]}')
-        grids1_paths.append(f'{dir}/{split_line[5]}')
-        grids2_paths.append(f'{dir}/{split_line[6]}')
-        grids1_count_paths.append(f'{dir}/{split_line[7]}')
-        grids2_count_paths.append(f'{dir}/{split_line[8]}')
-
-        grids1_paths.append(grids1_paths)
-        grids2_paths.append(grids2_paths)
-        grids1_count_paths.append(grids1_count_paths)
-        grids2_count_paths.append(grids2_count_paths)
+            grids1_paths.append(grids1_paths)
+            grids2_paths.append(grids2_paths)
+            grids1_count_paths.append(grids1_count_paths)
+            grids2_count_paths.append(grids2_count_paths)
+        except:
+            print(f'One of the lines in {output_file} could not be parsed')
     # Case 2 is when cartesian_ana.py was used to only prepare datasets for cartesian_batch.py using only a --f flag, in this case the datapaths are split among blocks
     # in outputs.txt and we need twice the amount of .csv files. This is handled ok by the original cartesian_batch parser
 
@@ -145,8 +147,7 @@ def build_total_df(grids, counts):
     :return:
     """
 
-    import time
-    start = time.time()
+
 
     total_grids = {}
     total_counts = {}
@@ -154,6 +155,7 @@ def build_total_df(grids, counts):
     triplize = lambda tr: f'{tr[0]},{tr[1]},{tr[2]}'
     detriplize = lambda tr: tuple(np.array(tr.split(',')).astype(np.int32))
 
+    # Multiprocess this
     for column in grids.columns:
         grid_col = grids[column].dropna().apply(triplize)
         count_col = counts[column].dropna()
@@ -491,32 +493,46 @@ def main(argv=sys.argv[1:]):
     @ Testing for perturbation of conformation #
     @@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
     """
-    exit()
+
+    import time
+    start = time.time()
 
     grids1a, grids2a = aggregate_conformation(grids1_paths)
     counts1a, counts2a = aggregate_conformation(gridscount1_paths)
 
+    print(f'Aggregate 1 {time.time() - start}')
+
     grids1b, grids2b = aggregate_conformation(grids2_paths) # This is for handling a second case from cartesian_ana.py, where --f and --s flags were both used and
     counts1b, counts2b = aggregate_conformation(gridscount2_paths) # grids are now in two different columns
+    print(f'Aggregate 2 {time.time() - start}')
+
     grids1 = pd.concat([grids1a, grids1b], axis=0, ignore_index=True)
     grids2 = pd.concat([grids2a, grids2b], axis=0, ignore_index=True)
+
     counts1 = pd.concat([counts1a, counts1b], axis=0, ignore_index=True)
     counts2 = pd.concat([counts2a, counts2b], axis=0, ignore_index=True)
+    print(f'Join 1&2 {time.time() - start}')
 
     ###
     total_grids1, total_counts1 = build_total_df(grids1, counts1)
     total_grids2, total_counts2 = build_total_df(grids2, counts2)
+    print(f'Build total {time.time() - start}')
     ###
 
-    print(total_grids1)
     from cartesian_ana import grid_rms
-    rms = grid_rms(total_grids1, total_grids2, total_counts1, total_counts2, method='genius')
-    int_rms1 = grid_rms(total_grids1, total_grids1, total_counts1, total_counts1, method='genius')
-    int_rms2 = grid_rms(total_grids2, total_grids2, total_counts2, total_counts2, method='genius')
+    rms, rms_norm = grid_rms(total_grids1, total_grids2, total_counts1, total_counts2, method='genius')
+
+    int_rms1, int_rms_norm1 = grid_rms(total_grids1, total_grids1, total_counts1, total_counts1, method='genius')
+    int_rms2, int_rms_norm2 = grid_rms(total_grids2, total_grids2, total_counts2, total_counts2, method='genius')
     rms = (2 * rms) - (int_rms1 + int_rms2)
+    print(f'Calculate R {time.time() - start}')
+
     rms_out = pd.DataFrame(rms, columns=[f'{args.id[0]}/{args.id[1]}'])
+    rms_norm = pd.DataFrame(rms_norm, columns=[f'{args.id[0]}/{args.id[1]}'])
 
     rms_out.plot()
+    rms_norm.plot()
+
     plt.show()
 
 
@@ -525,7 +541,7 @@ def main(argv=sys.argv[1:]):
     #print(counts1.iloc[:, 0].dropna().to_list())
 
 
-
+    # Pass args.grid (add as parameter to batch) to R-score calculation call in cartesian_ana
 
 
     ##
