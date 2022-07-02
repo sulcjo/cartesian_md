@@ -201,6 +201,7 @@ def normalize_grid_df(triple1, triple2):
 
     return(grids_unq1, grids_unq2)
     """
+
     xs, ys, zs = triple1[0], triple1[1], triple1[2]
     xs2, ys2, zs2 = triple2[0], triple2[1], triple2[2]
     detriplized_unq1 = {}
@@ -234,7 +235,70 @@ def normalize_grid_df(triple1, triple2):
 
     return(grids_unq1, grids_unq2)
 
-def grid_rms(grid_unq1, grid_unq2, grid_count1, grid_count2, method='genius', normalize=False):
+
+def calculate_triple(triple1, triple2, triple1_counts, triple2_counts):
+    sum_counts1, sum_counts2 = sum(triple1_counts), sum(triple2_counts)
+    triple1_counts = pd.DataFrame(triple1_counts)
+
+    xs2, ys2, zs2 = tuple(triple2[0]), tuple(triple2[1]), tuple(triple2[2])
+
+    samples = sum_counts1 * sum_counts2
+
+    def map_matrices(xyz):
+        return (xyz[0] - xs2, xyz[1] - ys2, xyz[2] - zs2)
+
+    def map_counts(xyz):
+        return (np.array(xyz) * triple2_counts)
+
+    # Prepare matrices
+    matrix = pd.DataFrame(triple1.apply(map_matrices, axis=1))
+
+
+    counts = triple1_counts.apply(map_counts, axis=1)
+    # Calculate ij pairs (each row is a single i, each column inside the array is a single j) including their weights
+    matrix = pd.DataFrame(matrix[0].to_list())
+
+    matrix_squared = matrix ** 2  # matrix columns are now deltas (x, y, z) squared. Sum columns up (deltaX^2 + deltaY^2 + deltaZ^2)
+    matrix_squared_sumcols = matrix_squared.sum(axis=1)
+
+    matrix_squared_sumcols_weighted = matrix_squared_sumcols * counts
+
+    # Calculate sums and the final R-factor for current atom
+    sums = matrix_squared_sumcols_weighted.sum().sum()
+    rmsd = math.sqrt((1 / samples) * sums)
+
+    return(rmsd)
+
+def rscore_async_norm_caller(iterator):
+    global ggrid_unq1, ggrid_unq2, ggrid_count1, ggrid_count2
+
+    triple1_n, triple2_n = normalize_grid_df(pd.DataFrame(ggrid_unq1.iloc[:, iterator].tolist()).dropna(),
+                                             pd.DataFrame(ggrid_unq2.iloc[:, iterator].tolist()).dropna())
+
+    rmsd_norm = calculate_triple(triple1_n,
+                                 triple2_n,
+                                 ggrid_count1.iloc[:, iterator].dropna().tolist(),
+                                 np.array(ggrid_count2.iloc[:, iterator].dropna().tolist()))
+    return(rmsd_norm)
+
+
+def rscore_async_caller(iterator):
+    global ggrid_unq1, ggrid_unq2, ggrid_count1, ggrid_count2
+
+    rmsd = calculate_triple(pd.DataFrame(ggrid_unq1.iloc[:, iterator].tolist()).dropna(),
+                            pd.DataFrame(ggrid_unq2.iloc[:, iterator].tolist()).dropna(),
+                            ggrid_count1.iloc[:, iterator].dropna().tolist(),
+                            np.array(ggrid_count2.iloc[:, iterator].dropna().tolist()))
+
+
+    return(rmsd)
+
+
+
+def grid_rms(grid_unq1, grid_unq2, grid_count1, grid_count2, method='genius'):
+    global ggrid_unq1, ggrid_unq2, ggrid_count1, ggrid_count2
+    ggrid_unq1, ggrid_unq2, ggrid_count1, ggrid_count2 = grid_unq1, grid_unq2, grid_count1, grid_count2
+
     """
     Calculates the so-called "R-score", which is derived from classic molecular RMSD.
     We have two trajectories, where i-th and j-th indexes denote a unique gridpoint inside each trajectory
@@ -271,42 +335,16 @@ def grid_rms(grid_unq1, grid_unq2, grid_count1, grid_count2, method='genius', no
     :param method:
     :return:
     """
+    try:
+        print(f'Calculating R-Score using gridsize {args.grid} nm')
+    except NameError:
+        print('Calculating R-Score using external call')
 
     # Prepare RMSmetric list (one value for one compared atom)
     rms_lst = []
     rms_norm = []
 
-    def calculate_triple(triple1, triple2, triple1_counts, triple2_counts):
-        sum_counts1, sum_counts2 = sum(triple1_counts), sum(triple2_counts)
-        triple1_counts = pd.DataFrame(triple1_counts)
 
-        xs2, ys2, zs2 = tuple(triple2[0]), tuple(triple2[1]), tuple(triple2[2])
-
-        samples = sum_counts1 * sum_counts2
-
-        def map_matrices(xyz):
-            return (xyz[0] - xs2, xyz[1] - ys2, xyz[2] - zs2)
-
-        def map_counts(xyz):
-            return (np.array(xyz) * triple2_counts)
-
-        # Prepare matrices
-        matrix = pd.DataFrame(triple1.apply(map_matrices, axis=1))
-
-        counts = triple1_counts.apply(map_counts, axis=1)
-        # Calculate ij pairs (each row is a single i, each column inside the array is a single j) including their weights
-        matrix = pd.DataFrame(matrix[0].to_list())
-
-        matrix_squared = matrix ** 2  # matrix columns are now deltas (x, y, z) squared. Sum columns up (deltaX^2 + deltaY^2 + deltaZ^2)
-        matrix_squared_sumcols = matrix_squared.sum(axis=1)
-
-        matrix_squared_sumcols_weighted = matrix_squared_sumcols * counts
-
-        # Calculate sums and the final R-factor for current atom
-        sums = matrix_squared_sumcols_weighted.sum().sum()
-        rmsd = math.sqrt((1 / samples) * sums)
-
-        return(rmsd)
 
     if method == 'genius':
 
@@ -314,6 +352,8 @@ def grid_rms(grid_unq1, grid_unq2, grid_count1, grid_count2, method='genius', no
         colsno_1 = len(grid_unq1.columns)
         colsno_2 = len(grid_unq2.columns)
 
+        rms_lst = []
+        rms_norm = []
 
         if colsno_1 != colsno_2:
             print('WARNING grid-datasets used for RMS calculation are of different size, RMS value may be faulty. Will iterate through'
@@ -322,19 +362,26 @@ def grid_rms(grid_unq1, grid_unq2, grid_count1, grid_count2, method='genius', no
         # two lens, ceil and /2 because datasets can theoretically have different size
         # this way the bar really calculates progress in such a case
 
+        import multiprocessing as mp
+        p = mp.Pool(caller_procs)
+        iterable = [i for i in range(len(grid_unq1.columns))]
+        callback = lambda result: rms_lst.append(result)
+        r = p.map_async(rscore_async_caller, iterable=iterable, callback=callback)
+        r.wait()
+
+        p = mp.Pool(caller_procs)
+        callback = lambda result: rms_norm.append(result)
+        r = p.map_async(rscore_async_norm_caller, iterable=iterable, callback=callback)
+        r.wait()
 
         # If we just straight up dropna, rows containing SOME None values would be dropped in entirety
         # This causes only some of the atom RMS to be calculated wrong, dependent on the atom with the least
         # unique values (the one where Nones start the earlies in the column)
         # This is solved by calculating column by column
 
-        try:
-            print(f'Calculating R-Score using gridsize {args.grid} nm')
-        except NameError:
-            print('Calculating R-Score using external call')
 
+        """
         for col1, col2, col1c, col2c in zip(grid_unq1.columns, grid_unq2.columns, grid_count1.columns, grid_count2.columns): # This works even if one of the datasets has less atoms
-
             triple1 = pd.DataFrame(grid_unq1[col1].tolist()).dropna()
             triple2 = pd.DataFrame(grid_unq2[col2].tolist()).dropna()
 
@@ -345,6 +392,7 @@ def grid_rms(grid_unq1, grid_unq2, grid_count1, grid_count2, method='genius', no
 
             # Append to list
             rms_lst.append(rmsd)
+        
 
 
             ### Calculate R-score for a distribution that ranges from 0 to 1 (for P-value testing)
@@ -354,11 +402,13 @@ def grid_rms(grid_unq1, grid_unq2, grid_count1, grid_count2, method='genius', no
             rmsd_norm = calculate_triple(triple1_n, triple2_n, triple1_counts, triple2_counts)
 
             rms_norm.append(rmsd_norm)
+        """
 
+    # These two methods don't yet support standardized calculations
     elif method == 'smart':
-        print(f'Calculating R-Score using gridsize {args.grid} nm')
         for col1, col2, col1c, col2c in zip(grid_unq1.columns,
                               grid_unq2.columns, grid_count1.columns, grid_count2.columns):  # This works even if one of the datasets has less atoms
+            print(col1)
             rmsd_sum = 0
 
             triple1 = pd.DataFrame(grid_unq1[col1].dropna().tolist()).dropna()
