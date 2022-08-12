@@ -370,8 +370,13 @@ def pymol_conformation():
     spectrum_ramp = '[gray70, pink, raspberry, purple]'
     sphere_select = ''
 
+    pymol_sub1 = 'cmd.label("changed","str(ID)")'
     pymol_sub2 = 'cmd.alter("*", "vdw=0.6")'
-    pymol_command = f"set orthoscopic, on; bg_color white; ramp_new colorbar, none, [{minimum_beta}, 0, {maximum_beta_conf}], {spectrum_ramp}; spectrum b, {spectrum}, minimum={minimum_beta}, maximum={maximum_beta_conf}; {sphere_select} ;set seq_view; show lines; {pymol_sub2}; set cartoon_discrete_colors, on; set valence, 1; set label_shadow_mode, 2; set label_size,-0.6; set label_font_id,7; set label_outline_color, black; set label_color, white; set label_position,(0,0,2); save {args.o}/{session}"
+    pymol_command = f"set orthoscopic, on; bg_color white; ramp_new colorbar, none, [{minimum_beta}, 0, {maximum_beta_conf}], {spectrum_ramp}; " \
+                    f"spectrum b, {spectrum}, minimum={minimum_beta}, maximum={maximum_beta_conf}; {sphere_select} ;set seq_view; show lines; {pymol_sub2};" \
+                    f"set cartoon_discrete_colors, on; set valence, 1; set label_shadow_mode, 2; set label_size,-0.6; set label_font_id,7; set label_outline_color, black; " \
+                    f"set label_color, white; set label_position,(0,0,2); select changed, b>0.5 ; show_as sticks cartoon sphere, changed; set cartoon_discrete_colors, on; set valence, 1; set label_shadow_mode, 2;" \
+                    f" set label_size,-0.6; set label_font_id,7; set label_outline_color, black; set label_color, white; {pymol_sub1}; save {args.o}/{session}"
 
     p = subprocess.Popen(f"pymol {args.o}/conformation_perturbed_atoms.pdb -d '{pymol_command}' &", stdout=subprocess.PIPE, shell=True, start_new_session=True)
 
@@ -550,7 +555,7 @@ def main(argv=sys.argv[1:]):
 
         pdb_conf = write_to_pdb_beta(args.pdbs, delta)
 
-        pdb_conf_header = f'REMARK B-Factor describes the R-score multiplied by 100 of an identical atom between two sets of trajectories\n' \
+        pdb_conf_header = f'REMARK B-Factor describes the R-score of an identical atom between two sets of trajectories\n' \
                            f'REMARK larger score means more conformational change on the atom\n' \
                            f'REMARK ANALYZED {m}x{args.id[0]},{n}x{args.id[1]} \n'
 
