@@ -840,6 +840,8 @@ axs_rmsf[1].plot(rmsf_pdz[0], delta_rmsf, color='red', label='delta')
 axs_rmsf[0].legend()
 axs_rmsf[1].legend()
 
+"""
+"""
 fig_us, axs_us = plt.subplots(nrows=3, ncols=1)
 setLineColor = 'blue'
 setFontSizeLarge = 18
@@ -1136,7 +1138,7 @@ fig.tight_layout()
 plt.subplots_adjust(hspace=0.7)
 plt.show()
 """
-
+"""
 def read_dat(path):
     with open(path) as file:
         lines = file.readlines()
@@ -1163,7 +1165,7 @@ for data, label in zip(datasets, labels):
     axs[row][col].legend()
 
 
-
+"""
 """
 base_path = '/run/timeshift/backup/IOCB/md/FDs/'
 open_i_rg = get_simple_dataset(f'{base_path}trp_gggggg_pdz_open_i/xmgrace/gyrate.xvg')

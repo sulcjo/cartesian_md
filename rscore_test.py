@@ -159,6 +159,7 @@ def generate_distribution(low, high, lowshift, highshift, datapoints=1000):
             distribution = generate_gaussian(distribution) # 60 % chance of generating Gaussian (and Gaussian-mixed) distributions
         else:
             distribution = generate_skewed(distribution) # 40 % Skewed
+    distribution = distribution.astype(np.float32)
 
     return(x, distribution)
 
@@ -166,8 +167,8 @@ def generate_distribution(low, high, lowshift, highshift, datapoints=1000):
 ####
 ####
 ####
-Tot = 2500000 #
-Datapoints = 250
+Tot = 12000000 #
+Datapoints = 100
 ####
 ####
 ####
@@ -263,10 +264,10 @@ print(f'{Tot} distributions with {Datapoints} datapoints, {time.time() - start} 
 #print(rms_list[0])
 import seaborn as sns
 import json
-with open('/run/timeshift/backup/IOCB/cartesian/rscore_testing/e/rscores.json', 'w') as outfile:
+with open('/run/timeshift/backup/IOCB/cartesian/rscore_testing/g/rscores.json', 'w') as outfile:
     json.dump(rms_list[0], outfile)
 sns.histplot(rms_list[0], stat='probability', bins=100)
-plt.savefig('/run/timeshift/backup/IOCB/cartesian/rscore_testing/e/hist.png')
+plt.savefig('/run/timeshift/backup/IOCB/cartesian/rscore_testing/g/hist.png')
 
 # 1000000 distributions with 500 datapoints, 22633.361141443253
 

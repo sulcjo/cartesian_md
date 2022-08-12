@@ -25,13 +25,19 @@ with open('/run/timeshift/backup/IOCB/cartesian/rscore_testing/d/rscores.json', 
     rscores2 = json.load(outfile)
 with open('/run/timeshift/backup/IOCB/cartesian/rscore_testing/e/rscores.json', 'r') as outfile:
     rscores3 = json.load(outfile)
+with open('/run/timeshift/backup/IOCB/cartesian/rscore_testing/f/rscores.json', 'r') as outfile:
+    rscores4 = json.load(outfile)
+with open('/run/timeshift/backup/IOCB/cartesian/rscore_testing/g/rscores.json', 'r') as outfile:
+    rscores5 = json.load(outfile)
 
 # Calculate and plot the histogram
 rscores = np.array(rscores)[0]
 rscores2 = np.array(rscores2)
 rscores3 = np.array(rscores3)
+rscores4 = np.array(rscores4)
+rscores5 = np.array(rscores4)
 
-rscores = np.concatenate([rscores, rscores2, rscores3])
+rscores = np.concatenate([rscores, rscores2, rscores3, rscores4, rscores5])
 
 
 
@@ -46,7 +52,7 @@ bin_middles = 0.5 * (bin_edges[1:] + bin_edges[:-1])
 
 
 # fit with curve_fit
-parameters, cov_matrix = curve_fit(fit_function, bin_middles, entries, gtol=1e-12, ftol=1e-12, xtol=1e-12, method='trf')
+parameters, cov_matrix = curve_fit(fit_function, bin_middles[50:], entries[50:], gtol=1e-12, ftol=1e-12, xtol=1e-12, method='trf')
 
 # plot poisson-deviation with fitted parameter
 x_plot = np.arange(0, 2, 0.01)

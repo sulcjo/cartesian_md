@@ -135,7 +135,6 @@ def aggregate_volumes(paths): # add option to read two sets from two .csv
 
     return(volumes_traj1, volumes_traj2, volsteps_traj1, volsteps_traj2)
 
-
 def build_total_df(grids, counts):
     """
     Takes aggregate dataframes of grids and counts and makes one total dataframe.
@@ -346,7 +345,6 @@ def plot_dynamical_distributions(volsteps_traj1_pvals, volsteps_traj2_pvals, sta
 
         ax1.set_title(f'Explored volume per step distributions per-atom\nwhere p < {args.pval}')
 
-
 def pymol_dynamicity():
         kind = args.pdbshow
 
@@ -363,6 +361,19 @@ def pymol_dynamicity():
             pymol_sub4 = f'cmd.label("more_in_{args.id[1]}","str(ID)")'
             pymol_command = f"set orthoscopic, on; bg_color white; spectrum b, marine_gray70_raspberry; {pymol_sub1}; select more_in_{args.id[0]}, b > 0; select more_in_{args.id[1]}, b < 0; color gray70, zero; set seq_view; show lines; {pymol_sub2}; show_as sticks cartoon sphere,more_in_{args.id[0]};show_as sticks cartoon sphere,more_in_{args.id[1]};{pymol_sub3};{pymol_sub4}; set cartoon_discrete_colors, on; set valence, 1; set label_shadow_mode, 2; set label_size,-0.6; set label_font_id,7; set label_outline_color, black; set label_color, white; set label_position,(0,0,2)"
             p = subprocess.Popen(f"pymol {args.o}/dynamically_perturbed_atoms_rankings.pdb -d '{pymol_command}'", stdout=subprocess.PIPE, shell=True)
+
+def pymol_conformation():
+    minimum_beta = 0
+    global maximum_beta_conf
+    session = 'visualized_positions.pse'
+    spectrum = 'gray70_pink_raspberry_purple'
+    spectrum_ramp = '[gray70, pink, raspberry, purple]'
+    sphere_select = ''
+
+    pymol_sub2 = 'cmd.alter("*", "vdw=0.6")'
+    pymol_command = f"set orthoscopic, on; bg_color white; ramp_new colorbar, none, [{minimum_beta}, 0, {maximum_beta_conf}], {spectrum_ramp}; spectrum b, {spectrum}, minimum={minimum_beta}, maximum={maximum_beta_conf}; {sphere_select} ;set seq_view; show lines; {pymol_sub2}; set cartoon_discrete_colors, on; set valence, 1; set label_shadow_mode, 2; set label_size,-0.6; set label_font_id,7; set label_outline_color, black; set label_color, white; set label_position,(0,0,2); save {args.o}/{session}"
+
+    p = subprocess.Popen(f"pymol {args.o}/conformation_perturbed_atoms.pdb -d '{pymol_command}' &", stdout=subprocess.PIPE, shell=True, start_new_session=True)
 
 def mwu_score_ranking(volsteps_df, mwu_scores, m, n, mwu_pvals):
     baseline = m*n*0.5 # mwu score of two exactly equal distributions
@@ -486,8 +497,6 @@ def main(argv=sys.argv[1:]):
 
 
 
-
-
     """
     @@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
     @ Testing for perturbation of conformation #
@@ -531,7 +540,25 @@ def main(argv=sys.argv[1:]):
     rms_norm = pd.DataFrame(rms_norm, columns=[f'{args.id[0]}/{args.id[1]}'])
 
     rms_out.plot()
-    rms_norm.plot()
+
+    if args.pdbs:
+        # Prepare .pdb for plot of kind=1 (show perturbed atoms)
+        delta = pd.Series(rms_out.iloc[:, 0].values)
+        global maximum_beta_conf
+        maximum_beta_conf = delta.max()
+
+
+        pdb_conf = write_to_pdb_beta(args.pdbs, delta)
+
+        pdb_conf_header = f'REMARK B-Factor describes the R-score multiplied by 100 of an identical atom between two sets of trajectories\n' \
+                           f'REMARK larger score means more conformational change on the atom\n' \
+                           f'REMARK ANALYZED {m}x{args.id[0]},{n}x{args.id[1]} \n'
+
+        with open(f'{args.o}/conformation_perturbed_atoms.pdb', 'w') as file:
+            file.write(pdb_conf_header + pdb_conf)
+
+    if args.pdbs and args.pdbshow:
+        pymol_conformation()
 
     plt.show()
 
