@@ -48,30 +48,41 @@ def parse_paths(output_file):
     grids1_count_paths=[]
     grids2_count_paths=[]
 
+
+
+
     # Case 1 is when cartesian_ana.py was used to do pairwise comparisons (i.e. using both --f and --s flags, then data for both trajectories are on a single line)
     for line in lines:
-        try:
-            split_line = line.split(',')
 
-            keys1.append(split_line[0])
-            keys2.append(split_line[1])
-            dir = split_line[2]
-            diff_paths.append(f'{dir}/{split_line[3]}')
-            rms_out_paths.append(f'{dir}/{split_line[4]}')
-            grids1_paths.append(f'{dir}/{split_line[5]}')
-            grids2_paths.append(f'{dir}/{split_line[6]}')
-            grids1_count_paths.append(f'{dir}/{split_line[7]}')
-            grids2_count_paths.append(f'{dir}/{split_line[8]}')
+        if args.id[0] in line or args.id[1] in line:
+            try:
 
-            grids1_paths.append(grids1_paths)
-            grids2_paths.append(grids2_paths)
-            grids1_count_paths.append(grids1_count_paths)
-            grids2_count_paths.append(grids2_count_paths)
-        except:
-            print(f'One of the lines in {output_file} could not be parsed')
+                """
+                When output file contains datasets for more than two different comparisons (sets of trajectories), we use the --id to extract those that we want
+                The user has to be as descriptive as possible in this case. For example, when three trajectories are present named "TrajectoryA", "TrajectoryA_second" and "TrajectoryB",
+                by using a parameter '--id "TrajectoryA,TrajectoryB", all of the trajectories would be selected, while we only want the two. Use '--id "TrajectoryA_second, TrajectoryB"'
+                """
+
+                split_line = line.split(',')
+
+                keys1.append(split_line[0])
+                keys2.append(split_line[1])
+                dir = split_line[2]
+                diff_paths.append(f'{dir}/{split_line[3]}')
+                rms_out_paths.append(f'{dir}/{split_line[4]}')
+                grids1_paths.append(f'{dir}/{split_line[5]}')
+                grids2_paths.append(f'{dir}/{split_line[6]}')
+                grids1_count_paths.append(f'{dir}/{split_line[7]}')
+                grids2_count_paths.append(f'{dir}/{split_line[8]}')
+
+                grids1_paths.append(grids1_paths)
+                grids2_paths.append(grids2_paths)
+                grids1_count_paths.append(grids1_count_paths)
+                grids2_count_paths.append(grids2_count_paths)
+            except:
+                print(f'One of the lines in {output_file} could not be parsed')
     # Case 2 is when cartesian_ana.py was used to only prepare datasets for cartesian_batch.py using only a --f flag, in this case the datapaths are split among blocks
     # in outputs.txt and we need twice the amount of .csv files. This is handled ok by the original cartesian_batch parser
-
 
 
     return(keys1, keys2, diff_paths, rms_out_paths, grids1_paths, grids2_paths, grids1_count_paths, grids2_count_paths)
@@ -369,13 +380,14 @@ def pymol_conformation():
     spectrum = 'gray70_pink_raspberry_purple'
     spectrum_ramp = '[gray70, pink, raspberry, purple]'
     sphere_select = ''
+    r_limit_display=0.5
 
     pymol_sub1 = 'cmd.label("changed","str(ID)")'
     pymol_sub2 = 'cmd.alter("*", "vdw=0.6")'
     pymol_command = f"set orthoscopic, on; bg_color white; ramp_new colorbar, none, [{minimum_beta}, 0, {maximum_beta_conf}], {spectrum_ramp}; " \
                     f"spectrum b, {spectrum}, minimum={minimum_beta}, maximum={maximum_beta_conf}; {sphere_select} ;set seq_view; show lines; {pymol_sub2};" \
                     f"set cartoon_discrete_colors, on; set valence, 1; set label_shadow_mode, 2; set label_size,-0.6; set label_font_id,7; set label_outline_color, black; " \
-                    f"set label_color, white; set label_position,(0,0,2); select changed, b>0.5 ; show_as sticks cartoon sphere, changed; set cartoon_discrete_colors, on; set valence, 1; set label_shadow_mode, 2;" \
+                    f"set label_color, white; set label_position,(0,0,2); select changed, b>{r_limit_display} ; show_as sticks cartoon sphere, changed; set cartoon_discrete_colors, on; set valence, 1; set label_shadow_mode, 2;" \
                     f" set label_size,-0.6; set label_font_id,7; set label_outline_color, black; set label_color, white; {pymol_sub1}; save {args.o}/{session}"
 
     p = subprocess.Popen(f"pymol {args.o}/conformation_perturbed_atoms.pdb -d '{pymol_command}' &", stdout=subprocess.PIPE, shell=True, start_new_session=True)
@@ -433,6 +445,7 @@ def main(argv=sys.argv[1:]):
 
     # Handle dynamicity aggregation and statistical testing
     volumes_traj1, volumes_traj2, volsteps_traj1, volsteps_traj2 = aggregate_volumes(diff_paths) # ==> volumes_traj1.T, volumes_traj2.T into boxplots or violins, compare the two. Use volsteps datasets, independent on traj length
+
 
 
     mwu_atoms, mwu_scores, mwu_pvals = mann_whitney_u_volumes(volsteps_traj1, volsteps_traj2) # ==> results of the Mann-Whitney U test. (atom_n, score, p-value)

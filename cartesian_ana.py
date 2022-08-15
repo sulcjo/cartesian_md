@@ -985,7 +985,7 @@ def main(argv=sys.argv[1:]):
 
             with open('outputs.txt', 'at') as file: # This assumes that --method=all !
 
-                diffname = 'diff_atom.csv'
+                diffname = f'{traj1_name}_{traj2_name}_diff.csv'
                 confname = f'{traj1_name}_{traj2_name}_grid_g{args.grid}.csv'
                 grids1name = f'{traj1_name}_grid_g{args.grid}.cart'
                 grids2name = f'{traj2_name}_grid_g{args.grid}.cart'
@@ -1000,7 +1000,7 @@ def main(argv=sys.argv[1:]):
     else:
         with open('outputs.txt', 'at') as file:  # This assumes that --method=all !
 
-            diffname = 'diff_atom.csv'
+            diffname = f'{traj1_name}_diff.csv'
             confname = 'nan'
             grids1name = f'{traj1_name}_grid_g{args.grid}.cart'
             grids2name = 'nan'
@@ -1056,7 +1056,7 @@ def main(argv=sys.argv[1:]):
             output_df.loc[output_df.index[0], f'SUMV({traj1_name})'] = tot_explored_volume_1
             output_df.loc[output_df.index[0], f'SUMV({traj1_name})/step'] = tot_explored_volume_1 / len(vectors1)
 
-        output_df.to_csv(f'{args.o}/diff_atom.csv')
+        output_df.to_csv(f'{args.o}/{diffname}')
 
         if args.pdbs:
             if not args.s:
