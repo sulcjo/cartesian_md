@@ -718,27 +718,53 @@ plt.show()
 #rg = get_simple_dataset('/home/sulcjo/IOCB/md/trp_gggggg_pdz_closed_400ns/xmgrace')
 #domain_distance = get_simple_dataset('/home/sulcjo/IOCB/md/trp_gggggg_pdz_closed_400ns/xmgrace')
 """
-"""
+def __prepare_matplotlib():
+    import matplotlib.pyplot as plt
+    # Prepare matplotlib parameters
+    SMALL_SIZE = 12
+    MEDIUM_SIZE = 14
+    BIGGER_SIZE = 16
+
+    plt.rc('font', size=SMALL_SIZE)  # controls default text sizes
+    plt.rc('axes', titlesize=SMALL_SIZE)  # fontsize of the axes title
+    plt.rc('axes', labelsize=MEDIUM_SIZE)  # fontsize of the x and y labels
+    plt.rc('xtick', labelsize=SMALL_SIZE)  # fontsize of the tick labels
+    plt.rc('ytick', labelsize=SMALL_SIZE)  # fontsize of the tick labels
+    plt.rc('legend', fontsize=SMALL_SIZE)  # legend fontsize
+    plt.rc('figure', titlesize=BIGGER_SIZE)  # fontsize of the figure title
+__prepare_matplotlib()
 # Load umbrella contacts, histograms and pmf curve
-us_contacts = get_simple_dataset('/run/timeshift/backup/IOCB/md/FDs/umbrella/centroids_comparison/fd4a_2/wham_results/contacts_pulling.xvg')
-pmf_curve = get_umbrella_profile('/run/timeshift/backup/IOCB/md/FDs/umbrella/centroids_comparison/fd4a_2/wham_results/profile_errors.xvg')
-pmf_histograms = get_umbrella_histogram('/run/timeshift/backup/IOCB/md/FDs/umbrella/centroids_comparison/fd4a_2/wham_results/histo.xvg')
-#solvation_curve_25 = get_rdf_time('/run/media/sulcjo/sulcjo-data/IOCB/md/umbrella/cluster5/cluster5/wham_results/', index=2.0)
 
-## Plot US
-convergence_lowlim=2.6
-convergence_highlim=4.5
-converged_vals = [val for i,val in enumerate(pmf_curve[1]) if convergence_highlim < float(pmf_curve[0][i]) > convergence_lowlim ]
-print(np.mean(converged_vals))
 
-fig_us, axs_us = plt.subplots(nrows=3, ncols=1, gridspec_kw={'height_ratios' : [3,2,2]})
-setLineColor = 'blue'
-setFontSizeLarge = 18
-setFontSizeMedium = 14
 
-axs_us[0].errorbar(pmf_curve[0], pmf_curve[1], yerr=pmf_curve[2], capsize=5, ecolor='black',color=setLineColor)
-axs_us[0].set_title('PMF Curve for FD4A representative cut II', fontsize=setFontSizeLarge)
-axs_us[0].set_ylabel('PMF / kJ/mol', fontsize=setFontSizeMedium)
+
+fig_us, axs_us = plt.subplots()
+
+"""
+pmf_curve = get_umbrella_profile('/run/media/sulcjo/sulcjo-data/IOCB/docking/FDs/ligands_article/us/pdz3_jama6/wham_results_40ns/profile_errors.xvg')
+axs_us.errorbar(pmf_curve[0], pmf_curve[1], yerr=pmf_curve[2], capsize=5, label='PDZ3 + JAMA-6')
+
+pmf_curve = get_umbrella_profile('/run/media/sulcjo/sulcjo-data/IOCB/docking/FDs/ligands_article/us/fd4a_jama6/wham_results_40ns/profile_errors.xvg')
+axs_us.errorbar(pmf_curve[0], pmf_curve[1], yerr=pmf_curve[2], capsize=5, label='FD4A + JAMA-6')
+
+pmf_curve = get_umbrella_profile('/run/media/sulcjo/sulcjo-data/IOCB/docking/FDs/ligands_article/fd3aj6_again/iii_us/wham_results_40ns/profile_errors.xvg')
+axs_us.errorbar(pmf_curve[0], pmf_curve[1], yerr=pmf_curve[2], capsize=5, label='FD3A + JAMA-6')
+
+
+
+axs_us.set_title('PMF of FDs+JAMA6 dissociation')
+"""
+pmf_curve = get_umbrella_profile('/run/media/sulcjo/sulcjo-data/IOCB/docking/FDs/ligands_article/interdomain_us/fd3a/wham_results/profile_errors.xvg')
+axs_us.errorbar(pmf_curve[0], pmf_curve[1], yerr=pmf_curve[2], capsize=5, label='FD3A - PDZ3...TrpCage')
+
+pmf_curve = get_umbrella_profile('/run/media/sulcjo/sulcjo-data/IOCB/docking/FDs/ligands_article/interdomain_us/fd4a/wham_results/profile_errors.xvg')
+axs_us.errorbar(pmf_curve[0], pmf_curve[1], yerr=pmf_curve[2], capsize=5, label='FD4A - TrpCage...PDZ3')
+
+axs_us.set_ylabel('PMF / kJ/mol')
+axs_us.set_xlabel(r'$\zeta$ / nm')
+axs_us.set(xlim=(1, 5.5))
+axs_us.set_title('PMF of FDs domains dissociation')
+axs_us.legend()
 
 
 #axs_us[1].scatter(solvation_curve_25[0],solvation_curve_25[1])
@@ -747,17 +773,9 @@ axs_us[0].set_ylabel('PMF / kJ/mol', fontsize=setFontSizeMedium)
 #rdf_time = pd.DataFrame(solvation_curve_25[1]).rolling(30).mean()
 #axs_us[1].plot(solvation_curve_25[0],rdf_time)
 
-for run in pmf_histograms[1]:
-    axs_us[1].plot(pmf_histograms[0], run, color=setLineColor)
-axs_us[1].set_title('Histograms', fontsize=setFontSizeLarge)
-axs_us[1].set_ylabel('Counts', fontsize=setFontSizeMedium)
-axs_us[1].set_xlabel('COM-COM distance / nm', fontsize=setFontSizeMedium)
 
-axs_us[2].plot(us_contacts[0], us_contacts[1], color=setLineColor)
-axs_us[2].set_title('< 0.6 nm contacts', fontsize=setFontSizeLarge)
-axs_us[2].set_xlabel('Time / ns', fontsize=setFontSizeMedium)
-axs_us[2].set_ylabel('Count', fontsize=setFontSizeMedium)
-"""
+plt.show()
+
 """
 """
 

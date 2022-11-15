@@ -27,7 +27,7 @@ import numpy as np
 import seaborn as sb
 from scipy.stats import mannwhitneyu as mwu
 from cartesian import __prepare_matplotlib
-from cartesian_ana import write_to_pdb_beta, str2bool
+from cartesian_ana import write_to_pdb_beta, str2bool, strlower
 import subprocess
 import re
 __prepare_matplotlib()
@@ -179,12 +179,14 @@ def build_total_df(grids, counts):
 
     # Multiprocess this
     for column in grids.columns:
+
         grid_col = grids[column].dropna().apply(triplize)
         count_col = counts[column].dropna()
         grid_count_col = pd.concat([grid_col, count_col], axis=1) # make a two column DF, one column grids, one columns counts
         grid_count_col.columns = ('grid', 'count') # group-by columns, two identical grid rows will be below each other
         total_column = grid_count_col.groupby(['grid']).sum()  # sum them up, obtaining an aggregate dataset of unique columns with correct populations
         total_grids[column], total_counts[column] = pd.Series(total_column.index).apply(detriplize), total_column['count'].values.astype(np.int32)
+
 
 
 
@@ -434,6 +436,10 @@ def main(argv=sys.argv[1:]):
                         default=1, choices=(0,1,2))
     parser.add_argument("--o", type=str, help='Output directory, defaults to names of trajectories used separated by _', required=False, default='.')
     parser.add_argument("--stripplot", type=str2bool, help='OPTIONAL plot a stripplot alongside dynamicity distributions, takes some time', required=False, default=False)
+    parser.add_argument('--method', type=strlower,
+                        help='Method - volume, grid, all; defaults to all', required=False,
+                        default='all',
+                        choices=('grid', 'volume', 'all'))
 
     global args
     args = parser.parse_args(argv)
@@ -454,165 +460,168 @@ def main(argv=sys.argv[1:]):
     # Testing for perturbation of dynamics #
     ########################################
     """
+    if args.method == 'all' or args.method == 'volume':
+        # Handle dynamicity aggregation and statistical testing
+        volumes_traj1, volumes_traj2, volsteps_traj1, volsteps_traj2, total_vs_1, total_vs_2, total_vs_steps_1, total_vs_steps_2 = aggregate_volumes(diff_paths) # ==> volumes_traj1.T, volumes_traj2.T into boxplots or violins, compare the two. Use volsteps datasets, independent on traj length
+        mwu_atoms, mwu_scores, mwu_pvals = mann_whitney_u_volumes(volsteps_traj1, volsteps_traj2) # ==> results of the Mann-Whitney U test. (atom_n, score, p-value)
 
-    # Handle dynamicity aggregation and statistical testing
-    volumes_traj1, volumes_traj2, volsteps_traj1, volsteps_traj2, total_vs_1, total_vs_2, total_vs_steps_1, total_vs_steps_2 = aggregate_volumes(diff_paths) # ==> volumes_traj1.T, volumes_traj2.T into boxplots or violins, compare the two. Use volsteps datasets, independent on traj length
-    mwu_atoms, mwu_scores, mwu_pvals = mann_whitney_u_volumes(volsteps_traj1, volsteps_traj2) # ==> results of the Mann-Whitney U test. (atom_n, score, p-value)
+        # Analysis of sums of explored volumes, characterizes the molecule as a whole
+        sumv1_steps = (np.average(total_vs_steps_1), np.std(total_vs_steps_1))
+        sumv2_steps = (np.average(total_vs_steps_2), np.std(total_vs_steps_2))
 
-    # Analysis of sums of explored volumes, characterizes the molecule as a whole
-    sumv1_steps = (np.average(total_vs_steps_1), np.std(total_vs_steps_1))
-    sumv2_steps = (np.average(total_vs_steps_2), np.std(total_vs_steps_2))
+        # Plot atoms where the distribution changed significantly (p_val < args.pval) as boxplots
+        volsteps_traj1_pvals, volsteps_traj2_pvals, only_perturbed_atoms = drop_above_pval(mwu_pvals, mwu_scores, volsteps_traj1, volsteps_traj2) # ==> two datasets only containing atoms proven to be perturbed, a dataframe prepared for b-coloring with all atoms and binary yes/no for perturbed
 
-    # Plot atoms where the distribution changed significantly (p_val < args.pval) as boxplots
-    volsteps_traj1_pvals, volsteps_traj2_pvals, only_perturbed_atoms = drop_above_pval(mwu_pvals, mwu_scores, volsteps_traj1, volsteps_traj2) # ==> two datasets only containing atoms proven to be perturbed, a dataframe prepared for b-coloring with all atoms and binary yes/no for perturbed
+        m = len(volumes_traj1.columns)  # amount of samples m
+        n = len(volumes_traj2.columns)  # amount of samples n
 
-    m = len(volumes_traj1.columns)  # amount of samples m
-    n = len(volumes_traj2.columns)  # amount of samples n
+        pdb_kind1_header = f'REMARK B-Factor 1 means that the atom was identified as perturbed by comparing explored\n' \
+                           f'REMARK volume distributions using MWU-test with a p-value limit of {args.pval}\n' \
+                           f'REMARK ANALYZED {m}x{args.id[0]},{n}x{args.id[1]} \n'
 
-    pdb_kind1_header = f'REMARK B-Factor 1 means that the atom was identified as perturbed by comparing explored\n' \
-                       f'REMARK volume distributions using MWU-test with a p-value limit of {args.pval}\n' \
-                       f'REMARK ANALYZED {m}x{args.id[0]},{n}x{args.id[1]} \n'
-
-    pdb_kind2_header = f'REMARK B-Factor 0 means that the atom was NOT identified as perturbed by comparing explored\n' \
-                       f'REMARK volume distributions using MWU-test with a p-value limit of {args.pval}. Positive B-Factor\n' \
-                       f'REMARK means that explored volume was larger for the -{args.id[0]}- batch of trajectories and vice-versa.\n' \
-                       f'REMARK B-factors are MWU scores with subtracted baselines (m*n*0.5) that represent the score in\n' \
-                       f'REMARK case of both distributions being identical.\n' \
-                       f'REMARK ANALYZED {m}x{args.id[0]},{n}x{args.id[1]} \n'
-
-
-    if not volsteps_traj1_pvals.empty and not volsteps_traj2_pvals.empty:
-
-        plot_dynamical_distributions(volsteps_traj1_pvals, volsteps_traj2_pvals, stacking=True) # Stacked or unstacked boxplot combined with stripplot
-
-        # Rank change of dynamicity, which variant more/less explored volume
-        mwu_score_delta_df, total_dynamicity_df = mwu_score_ranking(volumes_traj1, mwu_scores, m, n, mwu_pvals) # only one dataframe needed, they both contain scores and atom numbers
-
+        pdb_kind2_header = f'REMARK B-Factor 0 means that the atom was NOT identified as perturbed by comparing explored\n' \
+                           f'REMARK volume distributions using MWU-test with a p-value limit of {args.pval}. Positive B-Factor\n' \
+                           f'REMARK means that explored volume was larger for the -{args.id[0]}- batch of trajectories and vice-versa.\n' \
+                           f'REMARK B-factors are MWU scores with subtracted baselines (m*n*0.5) that represent the score in\n' \
+                           f'REMARK case of both distributions being identical.\n' \
+                           f'REMARK ANALYZED {m}x{args.id[0]},{n}x{args.id[1]} \n'
         # Save relevant dynamicity datasets
-        sumv1_steps_df = pd.DataFrame(sumv1_steps, index=[f'avg_sum_V_steps({args.id[0]})', f'std_sum_V_steps({args.id[0]})']).T
-        sumv2_steps_df = pd.DataFrame(sumv2_steps, index=[f'avg_sum_V_steps({args.id[1]})', f'std_sum_V_steps({args.id[1]})']).T
+        sumv1_steps_df = pd.DataFrame(sumv1_steps,
+                                      index=[f'avg_sum_V_steps({args.id[0]})', f'std_sum_V_steps({args.id[0]})']).T
+        sumv2_steps_df = pd.DataFrame(sumv2_steps,
+                                      index=[f'avg_sum_V_steps({args.id[1]})', f'std_sum_V_steps({args.id[1]})']).T
 
-        pd.concat([volsteps_traj1_pvals, volsteps_traj2_pvals, sumv1_steps_df, sumv2_steps_df], axis=1).to_csv(f'{args.o}/{m}x{args.id[0]},{n}x{args.id[1]}.csv')
+        pd.concat([volsteps_traj1_pvals, volsteps_traj2_pvals, sumv1_steps_df, sumv2_steps_df], axis=1).to_csv(
+            f'{args.o}/{m}x{args.id[0]},{n}x{args.id[1]}.csv')
         print(f'{args.id[0]} avg. vol. explored per step and std: {sumv1_steps_df}')
         print(f'{args.id[1]} avg. vol. explored per step and std: {sumv2_steps_df}')
 
+        if not volsteps_traj1_pvals.empty and not volsteps_traj2_pvals.empty:
+
+            plot_dynamical_distributions(volsteps_traj1_pvals, volsteps_traj2_pvals, stacking=True) # Stacked or unstacked boxplot combined with stripplot
+
+            # Rank change of dynamicity, which variant more/less explored volume
+            mwu_score_delta_df, total_dynamicity_df = mwu_score_ranking(volumes_traj1, mwu_scores, m, n, mwu_pvals) # only one dataframe needed, they both contain scores and atom numbers
+
+
+
+            """
+            Temporary - calculate sum of dynamicity for specific region in the molecule
+                    
+            """
+            atoms=(85,86,87,89,90,91,92,93,94,95,96,97,98,99,100,101,102,103,104,105,106,107,108,109,110,111,112,113,114,115,116,117,118,119,120,121,122,123,124,125,126,127,128,436,437,438,439,440,441,442,443,444,445,469,470,471,472,473,474,475,476,477,478,503,504,505,506,507,508,509,510)
+            atoms=np.array(atoms)-1
+            region1=volsteps_traj1.loc[volsteps_traj1.index[atoms]].sum(axis=0)
+            region2=volsteps_traj2.loc[volsteps_traj2.index[atoms]].sum(axis=0)
+
+            print(f'{args.id[0]} avg. vol. explored per step BINDING REGION and std: {region1.mean(), region1.std()}')
+            print(f'{args.id[1]} avg. vol. explored per step BINDING REGION and std: {region2.mean(), region2.std()}')
+
+
+
+
+
+            """
+            Use PyMol API later    
+            """
+            if args.pdbs:
+
+                # Prepare .pdb for plot of kind=1 (show perturbed atoms)
+                pdb_kind1 = write_to_pdb_beta(args.pdbs, only_perturbed_atoms)
+
+                pdb_kind2 = write_to_pdb_beta(args.pdbs, mwu_score_delta_df)
+
+                with open(f'{args.o}/dynamically_perturbed_atoms.pdb', 'w') as file:
+                    file.write(pdb_kind1_header + pdb_kind1)
+                with open(f'{args.o}/dynamically_perturbed_atoms_rankings.pdb', 'w') as file:
+                    file.write(pdb_kind2_header + pdb_kind2)
+
+        else:
+            print(f'For explored volume analysis, no atoms passed the MWU test with given p-value {args.pval}')
+            if args.pdbs:
+
+                # Prepare .pdb for plot of kind=1 (show perturbed atoms)
+                zeros_series = pd.Series([0 for i in range(len(volumes_traj1))], dtype=int)
+                pdb_kind1 = write_to_pdb_beta(args.pdbs, zeros_series)
+                pdb_kind2 = write_to_pdb_beta(args.pdbs, zeros_series)
+
+                with open(f'{args.o}/dynamically_perturbed_atoms.pdb', 'w') as file:
+                    file.write(pdb_kind1_header + pdb_kind1)
+                with open(f'{args.o}/dynamically_perturbed_atoms_rankings.pdb', 'w') as file:
+                    file.write(pdb_kind2_header + pdb_kind2)
+
+
+        if args.pdbs and args.pdbshow:
+            pymol_dynamicity()
+
+    if args.method == 'all' or args.method == 'grid':
         """
-        Temporary - calculate sum of dynamicity for specific region in the molecule
-                
+        @@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+        @ Testing for perturbation of conformation #
+        @@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
         """
-        atoms=(85,86,87,89,90,91,92,93,94,95,96,97,98,99,100,101,102,103,104,105,106,107,108,109,110,111,112,113,114,115,116,117,118,119,120,121,122,123,124,125,126,127,128,436,437,438,439,440,441,442,443,444,445,469,470,471,472,473,474,475,476,477,478,503,504,505,506,507,508,509,510)
-        atoms=np.array(atoms)-1
-        region1=volsteps_traj1.loc[volsteps_traj1.index[atoms]].sum(axis=0)
-        region2=volsteps_traj2.loc[volsteps_traj2.index[atoms]].sum(axis=0)
 
-        print(f'{args.id[0]} avg. vol. explored per step BINDING REGION and std: {region1.mean(), region1.std()}')
-        print(f'{args.id[1]} avg. vol. explored per step BINDING REGION and std: {region2.mean(), region2.std()}')
+        import time
+        start = time.time()
+
+        grids1a, grids2a = aggregate_conformation(grids1_paths)
 
 
+        counts1a, counts2a = aggregate_conformation(gridscount1_paths)
 
+        print(f'Aggregate 1 {time.time() - start}')
 
+        grids1b, grids2b = aggregate_conformation(grids2_paths) # This is for handling a second case from cartesian_ana.py, where --f and --s flags were both used and
+        counts1b, counts2b = aggregate_conformation(gridscount2_paths) # grids are now in two different columns
+        print(f'Aggregate 2 {time.time() - start}')
 
-        """
-        Use PyMol API later    
-        """
+        grids1 = pd.concat([grids1a, grids1b], axis=0, ignore_index=True)
+        grids2 = pd.concat([grids2a, grids2b], axis=0, ignore_index=True)
+
+        counts1 = pd.concat([counts1a, counts1b], axis=0, ignore_index=True)
+        counts2 = pd.concat([counts2a, counts2b], axis=0, ignore_index=True)
+        print(f'Join 1&2 {time.time() - start}')
+
+        ###
+        total_grids1, total_counts1 = build_total_df(grids1, counts1)
+        total_grids2, total_counts2 = build_total_df(grids2, counts2)
+        print(f'Build total {time.time() - start}')
+        ###
+
+        from cartesian_ana import grid_rms
+        rms, rms_norm = grid_rms(total_grids1, total_grids2, total_counts1, total_counts2, method='genius')
+
+        int_rms1, int_rms_norm1 = grid_rms(total_grids1, total_grids1, total_counts1, total_counts1, method='genius')
+        int_rms2, int_rms_norm2 = grid_rms(total_grids2, total_grids2, total_counts2, total_counts2, method='genius')
+        rms = (2 * rms) - (int_rms1 + int_rms2)
+        print(f'Calculate R {time.time() - start}')
+
+        rms_out = pd.DataFrame(rms, columns=[f'{args.id[0]}/{args.id[1]}'])
+        rms_norm = pd.DataFrame(rms_norm, columns=[f'{args.id[0]}/{args.id[1]}'])
+
+        rms_out.plot()
+
         if args.pdbs:
-
             # Prepare .pdb for plot of kind=1 (show perturbed atoms)
-            pdb_kind1 = write_to_pdb_beta(args.pdbs, only_perturbed_atoms)
+            delta = pd.Series(rms_out.iloc[:, 0].values)
+            global maximum_beta_conf
+            maximum_beta_conf = delta.max()
 
-            pdb_kind2 = write_to_pdb_beta(args.pdbs, mwu_score_delta_df)
+            m = len(total_grids1.columns)  # amount of samples m
+            n = len(total_grids2.columns)  # amount of samples n
+            pdb_conf = write_to_pdb_beta(args.pdbs, delta)
 
-            with open(f'{args.o}/dynamically_perturbed_atoms.pdb', 'w') as file:
-                file.write(pdb_kind1_header + pdb_kind1)
-            with open(f'{args.o}/dynamically_perturbed_atoms_rankings.pdb', 'w') as file:
-                file.write(pdb_kind2_header + pdb_kind2)
+            pdb_conf_header = f'REMARK B-Factor describes the R-score of an identical atom between two sets of trajectories\n' \
+                               f'REMARK larger score means more conformational change on the atom\n' \
+                               f'REMARK ANALYZED {m}x{args.id[0]},{n}x{args.id[1]} \n'
 
-    else:
-        print(f'For explored volume analysis, no atoms passed the MWU test with given p-value {args.pval}')
-        if args.pdbs:
+            with open(f'{args.o}/conformation_perturbed_atoms.pdb', 'w') as file:
+                file.write(pdb_conf_header + pdb_conf)
 
-            # Prepare .pdb for plot of kind=1 (show perturbed atoms)
+        if args.pdbs and args.pdbshow:
+            pymol_conformation()
 
-
-            zeros_series = pd.Series([0 for i in range(len(volumes_traj1))])
-            pdb_kind1 = write_to_pdb_beta(args.pdbs, zeros_series)
-            pdb_kind2 = write_to_pdb_beta(args.pdbs, zeros_series)
-
-            with open(f'{args.o}/dynamically_perturbed_atoms.pdb', 'w') as file:
-                file.write(pdb_kind1_header + pdb_kind1)
-            with open(f'{args.o}/dynamically_perturbed_atoms_rankings.pdb', 'w') as file:
-                file.write(pdb_kind2_header + pdb_kind2)
-
-    if args.pdbs and args.pdbshow:
-        pymol_dynamicity()
-
-
-
-
-    """
-    @@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
-    @ Testing for perturbation of conformation #
-    @@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
-    """
-
-    import time
-    start = time.time()
-
-    grids1a, grids2a = aggregate_conformation(grids1_paths)
-    counts1a, counts2a = aggregate_conformation(gridscount1_paths)
-
-    print(f'Aggregate 1 {time.time() - start}')
-
-    grids1b, grids2b = aggregate_conformation(grids2_paths) # This is for handling a second case from cartesian_ana.py, where --f and --s flags were both used and
-    counts1b, counts2b = aggregate_conformation(gridscount2_paths) # grids are now in two different columns
-    print(f'Aggregate 2 {time.time() - start}')
-
-    grids1 = pd.concat([grids1a, grids1b], axis=0, ignore_index=True)
-    grids2 = pd.concat([grids2a, grids2b], axis=0, ignore_index=True)
-
-    counts1 = pd.concat([counts1a, counts1b], axis=0, ignore_index=True)
-    counts2 = pd.concat([counts2a, counts2b], axis=0, ignore_index=True)
-    print(f'Join 1&2 {time.time() - start}')
-
-    ###
-    total_grids1, total_counts1 = build_total_df(grids1, counts1)
-    total_grids2, total_counts2 = build_total_df(grids2, counts2)
-    print(f'Build total {time.time() - start}')
-    ###
-
-    from cartesian_ana import grid_rms
-    rms, rms_norm = grid_rms(total_grids1, total_grids2, total_counts1, total_counts2, method='genius')
-
-    int_rms1, int_rms_norm1 = grid_rms(total_grids1, total_grids1, total_counts1, total_counts1, method='genius')
-    int_rms2, int_rms_norm2 = grid_rms(total_grids2, total_grids2, total_counts2, total_counts2, method='genius')
-    rms = (2 * rms) - (int_rms1 + int_rms2)
-    print(f'Calculate R {time.time() - start}')
-
-    rms_out = pd.DataFrame(rms, columns=[f'{args.id[0]}/{args.id[1]}'])
-    rms_norm = pd.DataFrame(rms_norm, columns=[f'{args.id[0]}/{args.id[1]}'])
-
-    rms_out.plot()
-
-    if args.pdbs:
-        # Prepare .pdb for plot of kind=1 (show perturbed atoms)
-        delta = pd.Series(rms_out.iloc[:, 0].values)
-        global maximum_beta_conf
-        maximum_beta_conf = delta.max()
-
-
-        pdb_conf = write_to_pdb_beta(args.pdbs, delta)
-
-        pdb_conf_header = f'REMARK B-Factor describes the R-score of an identical atom between two sets of trajectories\n' \
-                           f'REMARK larger score means more conformational change on the atom\n' \
-                           f'REMARK ANALYZED {m}x{args.id[0]},{n}x{args.id[1]} \n'
-
-        with open(f'{args.o}/conformation_perturbed_atoms.pdb', 'w') as file:
-            file.write(pdb_conf_header + pdb_conf)
-
-    if args.pdbs and args.pdbshow:
-        pymol_conformation()
-
-    plt.show()
+        plt.show()
 
 
 

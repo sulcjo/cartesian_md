@@ -73,49 +73,98 @@ def analyse_space(vector):
     return(output_df)
 
 def grid(vectors):
+    if args.downsample != 0:
+        downsampling_level = args.downsample
 
 
-    divided = (vectors / args.grid)  # Divide all cells by args.grid #
-    divided = divided.apply(np.floor).astype(np.int16) # Floor means that the grids start from 0,
-    # not 0 (because then for example x=0.05 / grid=0.1 would end up in bin=0, which is the zeroth one)
 
-    """
-    Atomic coordinates are assigned into 3D histogram bins with binning parameter set by args.bin.
-    In the unlikely case that a certain coordinate is on the binning boundary (binning=1 ; coordinate=2.0 for example)
-    the coordinate always goes into the "bin on the left". Returns two DataFrames, one containing unique grids for each atom XYZ value,
-    the other one containing corresponding counts (how many times the vector
-    visited these grid members during the trajectory)
-    :param vectors:
-    :return: Atomic coordinates as bin positions in XYZ, only unique members and their counts (two DFs)
-    """
-    # Contrary to the old solution, all values that are on the bin border (bin=1 ; values like 2.0, 3.0, 1.0) go "to the left" bin
-    # i.e. Coordinate=2.0 / Bin=1.0 ends up in bin #2
+        ### Downsample each column using Lanczos algorithm, triple by triple
+        uniqs_red = {}
+        uniqs_counts_red = {}
+        from skimage import data
+        from skimage.transform import pyramid_gaussian
 
-    number_of_triples = int(len(divided.columns)/3)
-    list_of_uniq_dfs = []
-    list_of_count_dfs = []
+        for i in range(int(len(vectors.columns) / 3)):
+            firstcol = i*3
+            lastcol = (i*3)+3
 
-    # np.unique slower than pd.unique, which uses hash-tables to lookup the unique values
-    # but pandas can't work on three numerical values at once unlike numpy which can find unique values in 3,n arrays
-    # join XYZ columns into strings (one string for one atom in one observation)
-    # then find unique strings using pd.unique. Then split back into numerical DataFrame with str.split(',')
+            triple = vectors.iloc[:, firstcol:lastcol].dropna()
+            triple = np.array(triple).reshape(-1, 3)
+            pyramid = tuple(pyramid_gaussian(triple, downscale=2, max_layer=downsampling_level, channel_axis=-1))
+            uniqs_red[i] = tuple(tuple(np.floor((i/args.grid)).astype(np.int16)) for i in pyramid[-1]) # We want the last level of downsampling
+            # Division is done straight after downsampling with assignment into the dictionary
 
-    for triple in range(number_of_triples):
+        divided = pd.DataFrame(dict([ (k,pd.Series(v)) for k,v in uniqs_red.items() ]))
 
-        # Column triple iterator
-        lowcol = triple*3
+        number_of_triples = int(len(divided.columns))
+        list_of_uniq_dfs = []
+        list_of_count_dfs = []
+        for triple in range(number_of_triples):
+            # XYZ values from three columns into a single column. String of form 'x,y,z'
+            triple_arr = divided.iloc[:, triple].to_numpy()
 
-        # XYZ values from three columns into a single column. String of form 'x,y,z'
-        triple_arr = divided.iloc[:, lowcol:lowcol+3].to_numpy().reshape(-1,3)
+            # pd.unique solution
+            triplize = lambda tr: f'{tr[0]},{tr[1]},{tr[2]}'
+            # triplized = np.apply_along_axis(triplize, 1, triple_arr)
+            triplized = tuple(map(triplize, triple_arr))
 
-        if args.gridbackend == 0:
-            # Variant np.unique solution
-            uniq, count = np.unique(triple_arr, axis=0, return_counts=True)
+            uniq = pd.value_counts(triplized)
 
-            uniq = tuple(uniq.astype(np.int32)) # It works with tuples, with arrays pandas just expand everything
-            count = tuple(count.astype(np.int32))
+            count = uniq.values
+            detriplize = lambda tr: tuple(np.array(tr.split(',')).astype(np.int32))
+            uniq = tuple(map(detriplize, uniq.index.values))
 
-        else:
+            list_of_uniq_dfs.append(uniq)
+            list_of_count_dfs.append(count)
+
+        uniq_df = pd.DataFrame(list_of_uniq_dfs).T
+        count_df = pd.DataFrame(list_of_count_dfs).T
+
+    else:
+
+        divided = (vectors / args.grid)  # Divide all cells by args.grid #
+        divided = divided.apply(np.floor).astype(np.int16) # Floor means that the grids start from 0,
+        # not 0 (because then for example x=0.05 / grid=0.1 would end up in bin=0, which is the zeroth one)
+
+        """
+        Atomic coordinates are assigned into 3D histogram bins with binning parameter set by args.bin.
+        In the unlikely case that a certain coordinate is on the binning boundary (binning=1 ; coordinate=2.0 for example)
+        the coordinate always goes into the "bin on the left". Returns two DataFrames, one containing unique grids for each atom XYZ value,
+        the other one containing corresponding counts (how many times the vector
+        visited these grid members during the trajectory)
+        :param vectors:
+        :return: Atomic coordinates as bin positions in XYZ, only unique members and their counts (two DFs)
+        """
+        # Contrary to the old solution, all values that are on the bin border (bin=1 ; values like 2.0, 3.0, 1.0) go "to the left" bin
+        # i.e. Coordinate=2.0 / Bin=1.0 ends up in bin #2
+
+        number_of_triples = int(len(divided.columns)/3)
+        list_of_uniq_dfs = []
+        list_of_count_dfs = []
+
+        # np.unique slower than pd.unique, which uses hash-tables to lookup the unique values
+        # but pandas can't work on three numerical values at once unlike numpy which can find unique values in 3,n arrays
+        # join XYZ columns into strings (one string for one atom in one observation)
+        # then find unique strings using pd.unique. Then split back into numerical DataFrame with str.split(',')
+
+        for triple in range(number_of_triples):
+
+            # Column triple iterator
+            lowcol = triple*3
+
+            # XYZ values from three columns into a single column. String of form 'x,y,z'
+            triple_arr = divided.iloc[:, lowcol:lowcol+3].to_numpy().reshape(-1,3)
+
+            """
+            if args.gridbackend == 0:
+                # Variant np.unique solution
+                uniq, count = np.unique(triple_arr, axis=0, return_counts=True)
+    
+                uniq = tuple(uniq.astype(np.int32)) # It works with tuples, with arrays pandas just expand everything
+                count = tuple(count.astype(np.int32))
+    
+            else:
+            """
             # pd.unique solution
             triplize = lambda tr: f'{tr[0]},{tr[1]},{tr[2]}'
             #triplized = np.apply_along_axis(triplize, 1, triple_arr)
@@ -127,11 +176,12 @@ def grid(vectors):
             detriplize = lambda tr: tuple(np.array(tr.split(',')).astype(np.int32))
             uniq = tuple(map(detriplize, uniq.index.values))
 
-        list_of_uniq_dfs.append(uniq)
-        list_of_count_dfs.append(count)
+            list_of_uniq_dfs.append(uniq)
+            list_of_count_dfs.append(count)
 
-    uniq_df = pd.DataFrame(list_of_uniq_dfs).T
-    count_df = pd.DataFrame(list_of_count_dfs).T
+        uniq_df = pd.DataFrame(list_of_uniq_dfs).T
+        count_df = pd.DataFrame(list_of_count_dfs).T
+
 
 
     #print("--- %s Uniques ided---" % (time.time() - start_time))
@@ -235,13 +285,11 @@ def normalize_grid_df(triple1, triple2):
 
     return(grids_unq1, grids_unq2)
 
-
 def calculate_triple(triple1, triple2, triple1_counts, triple2_counts):
     sum_counts1, sum_counts2 = sum(triple1_counts), sum(triple2_counts)
     triple1_counts = pd.DataFrame(triple1_counts)
 
     xs2, ys2, zs2 = tuple(triple2[0]), tuple(triple2[1]), tuple(triple2[2])
-
     samples = sum_counts1 * sum_counts2
 
     def map_matrices(xyz):
@@ -281,7 +329,6 @@ def rscore_async_norm_caller(iterator):
                                  np.array(ggrid_count2.iloc[:, iterator].dropna().tolist()))
     return(rmsd_norm)
 
-
 def rscore_async_caller(iterator):
     global ggrid_unq1, ggrid_unq2, ggrid_count1, ggrid_count2
 
@@ -292,8 +339,6 @@ def rscore_async_caller(iterator):
 
 
     return(rmsd)
-
-
 
 def grid_rms(grid_unq1, grid_unq2, grid_count1, grid_count2, method='genius'):
     global ggrid_unq1, ggrid_unq2, ggrid_count1, ggrid_count2
@@ -343,10 +388,11 @@ def grid_rms(grid_unq1, grid_unq2, grid_count1, grid_count2, method='genius'):
     # Prepare RMSmetric list (one value for one compared atom)
     rms_lst = []
     rms_norm = []
-
-
-
+    #method = 'brute-force'
     if method == 'genius':
+
+        import time
+        start = time.time()
 
         # How many triples
         colsno_1 = len(grid_unq1.columns)
@@ -363,16 +409,22 @@ def grid_rms(grid_unq1, grid_unq2, grid_count1, grid_count2, method='genius'):
         # this way the bar really calculates progress in such a case
 
         import multiprocessing as mp
+
         p = mp.Pool(caller_procs)
         iterable = [i for i in range(len(grid_unq1.columns))]
         callback = lambda result: rms_lst.append(result)
         r = p.map_async(rscore_async_caller, iterable=iterable, callback=callback)
         r.wait()
 
+
         p = mp.Pool(caller_procs)
         callback = lambda result: rms_norm.append(result)
         r = p.map_async(rscore_async_norm_caller, iterable=iterable, callback=callback)
         r.wait()
+
+        end = time.time()
+        print(end-start)
+
 
         # If we just straight up dropna, rows containing SOME None values would be dropped in entirety
         # This causes only some of the atom RMS to be calculated wrong, dependent on the atom with the least
@@ -936,8 +988,8 @@ def main(argv=sys.argv[1:]):
                         #help='Bins with populations lower than this will be disregarded for plotting, defaults to 10 (good for throwing away SSAP caused artefacts)',
                         #required=False, default=10)
     #parser.add_argument('--mp', type=int, help='Nthreads to use for grid calculations, defaults to 1', required=False, default=False)
-    parser.add_argument('--gridbackend', type=int, help='Backend to use for unique grid assignment', required=False, default=1, choices=(0,1))
-
+    #parser.add_argument('--gridbackend', type=int, help='Backend to use for unique grid assignment', required=False, default=1, choices=(0,1))
+    parser.add_argument('--downsample', type=int, help='Downsampling level for coordinates with Pyramid Gaussian, default 0. 2 is a good start.')
     ## Plotting
     parser.add_argument("--p", type=str2bool, help='Disable all visualization and plotting, overrides all other plot parameters. True=NO plots', default=False)
     parser.add_argument("--pdbshow", type=str2bool, help='Creates a PyMol visualization of dynamicity and position change, requires --pdbs. '
